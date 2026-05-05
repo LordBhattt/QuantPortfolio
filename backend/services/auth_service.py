@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
+from fastapi import Response
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy import insert, select
@@ -30,6 +31,23 @@ def create_access_token(user_id: str) -> str:
         settings.SECRET_KEY,
         algorithm=settings.ALGORITHM,
     )
+
+
+def set_auth_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=settings.AUTH_COOKIE_NAME,
+        value=token,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        expires=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path=settings.AUTH_COOKIE_PATH,
+        secure=settings.AUTH_COOKIE_SECURE,
+        httponly=True,
+        samesite=settings.AUTH_COOKIE_SAMESITE,
+    )
+
+
+def clear_auth_cookie(response: Response) -> None:
+    response.delete_cookie(key=settings.AUTH_COOKIE_NAME, path=settings.AUTH_COOKIE_PATH)
 
 
 def decode_token(token: str) -> TokenData:

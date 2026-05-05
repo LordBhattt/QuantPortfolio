@@ -1,36 +1,29 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 
 import { getAnalytics, getFactorExposure } from '../api/analytics'
 
-export function useAnalytics(portfolioId) {
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
+function getErrorMessage(error, fallback) {
+  return error?.response?.data?.detail || error?.message || fallback
+}
 
-  const fetch = useCallback(async () => {
-    if (!portfolioId) {
-      setData(null)
-      setLoading(false)
-      return
-    }
-    setLoading(true)
-    setError(null)
-    try {
+export function useAnalytics(portfolioId) {
+  const query = useQuery({
+    queryKey: ['analytics', portfolioId],
+    enabled: Boolean(portfolioId),
+    queryFn: async () => {
       const [analytics, factors] = await Promise.all([
         getAnalytics(portfolioId),
         getFactorExposure(portfolioId),
       ])
-      setData({ ...analytics, factor_exposure: factors })
-    } catch (err) {
-      setError(err.response?.data?.detail || err.message)
-    } finally {
-      setLoading(false)
-    }
-  }, [portfolioId])
+      return { ...analytics, factor_exposure: factors }
+    },
+    staleTime: 60_000,
+  })
 
-  useEffect(() => {
-    fetch()
-  }, [fetch])
-
-  return { data, loading, error, refetch: fetch }
+  return {
+    data: query.data ?? null,
+    loading: query.isLoading || query.isFetching,
+    error: getErrorMessage(query.error, null),
+    refetch: query.refetch,
+  }
 }

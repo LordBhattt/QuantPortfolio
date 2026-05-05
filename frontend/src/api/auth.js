@@ -19,6 +19,10 @@ export async function login({ email, password }) {
   return data
 }
 
+export async function logout() {
+  await client.post('/api/v1/auth/logout')
+}
+
 export async function getCurrentUser() {
   const { data } = await client.get('/api/v1/auth/me')
   return data

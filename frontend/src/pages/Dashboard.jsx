@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import BenchmarkComparisonChart from "../components/charts/BenchmarkComparisonChart";
 import PerformanceChart from "../components/charts/PerformanceChart";
 import AllocationDonut from "../components/charts/AllocationDonut";
 import HeroBand from "../components/dashboard/HeroBand";
@@ -17,6 +18,10 @@ import { usePortfolioStore } from "../store/portfolioStore";
 
 const RANGES = ["7D", "1M", "3M", "1Y"];
 const RANGE_LEN = { "7D": 7, "1M": 30, "3M": 90, "1Y": 365 };
+const CHART_TABS = [
+  { id: "benchmark", label: "Benchmark" },
+  { id: "value", label: "Value" },
+];
 
 function SkeletonBlock({ className }) {
   return <div className={`bg-gray-100 animate-pulse rounded-xl ${className}`} />;
@@ -27,6 +32,7 @@ export default function Dashboard() {
   const portfolioId = usePortfolioStore((s) => s.portfolioId);
   const regime = usePortfolioStore((s) => s.regime);
   const [range, setRange] = useState("3M");
+  const [chartTab, setChartTab] = useState("benchmark");
 
   const { data: analytics, loading: analyticsLoading, error: analyticsError } = useAnalytics(portfolioId);
   const { data: holdings, loading: holdingsLoading } = useHoldings(portfolioId);
@@ -36,10 +42,12 @@ export default function Dashboard() {
   const holdingsList = holdings || [];
   const empty = !holdingsLoading && holdingsList.length === 0;
   const perfSource = analytics?.performance_series || [];
+  const benchmarkSource = analytics?.benchmark_series || [];
   const perf = perfSource.slice(-RANGE_LEN[range]);
   const sparkData = perfSource.slice(-30).map((point) => point.portfolio);
   const allocation = mapAllocationData(analytics?.asset_class_allocation);
   const mergedHoldings = useMemo(() => mergeHoldingsWithAnalytics(holdingsList, analytics), [holdingsList, analytics]);
+  const benchmarkLatest = benchmarkSource.at(-1);
 
   const total = analytics?.total_value_inr ?? 0;
   const totalPnl = analytics?.total_pnl_inr ?? 0;
@@ -109,32 +117,83 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <div className="lg:col-span-2 animate-fadeUp opacity-0" style={{ animationDelay: "240ms" }}>
           <Card className="p-5">
-            <div className="mb-4">
-              <h2 className="text-[15px] font-sans font-semibold text-gray-900">Performance</h2>
-              <p className="text-xs font-mono text-gray-500 mt-0.5">Portfolio vs Benchmark</p>
-            </div>
-            {isLoading ? (
-              <SkeletonBlock className="h-[300px] w-full" />
-            ) : perf.length > 0 ? (
-              <PerformanceChart data={perf} costBasis={invested} />
-            ) : (
-              <EmptyState title="No performance history yet" subtitle="Add holdings to start tracking performance." />
-            )}
-            <div className="mt-4 flex justify-center">
-              <div className="inline-flex items-center border border-black/[0.08] rounded-full p-0.5">
-                {RANGES.map((token) => (
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-[15px] font-sans font-semibold text-gray-900">Performance</h2>
+                <p className="text-xs font-mono text-gray-500 mt-0.5">
+                  {chartTab === "benchmark" ? "Rolling 6M comparison vs NIFTY 50 and S&P 500" : "Portfolio value vs cost basis"}
+                </p>
+              </div>
+              <div className="inline-flex items-center border border-black/[0.08] rounded-full p-0.5 self-start">
+                {CHART_TABS.map((tab) => (
                   <button
-                    key={token}
-                    onClick={() => setRange(token)}
+                    key={tab.id}
+                    onClick={() => setChartTab(tab.id)}
                     className={`px-4 py-1 text-[11px] font-mono font-medium rounded-full transition-colors ${
-                      range === token ? "bg-gray-900 text-white" : "text-gray-500 hover:text-gray-900"
+                      chartTab === tab.id ? "bg-gray-900 text-white" : "text-gray-500 hover:text-gray-900"
                     }`}
                   >
-                    {token}
+                    {tab.label}
                   </button>
                 ))}
               </div>
             </div>
+            {isLoading ? (
+              <SkeletonBlock className="h-[300px] w-full" />
+            ) : chartTab === "benchmark" ? (
+              benchmarkSource.length > 0 ? (
+                <div>
+                  <BenchmarkComparisonChart data={benchmarkSource} />
+                  {benchmarkLatest && (
+                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div className="rounded-xl border border-black/[0.06] bg-gray-50 px-3 py-2">
+                        <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-gray-400">Portfolio</div>
+                        <div className="mt-1 font-mono text-sm font-semibold text-gray-900">
+                          {((benchmarkLatest.portfolio || 0) * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-black/[0.06] bg-gray-50 px-3 py-2">
+                        <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-gray-400">NIFTY 50</div>
+                        <div className="mt-1 font-mono text-sm font-semibold text-gray-900">
+                          {((benchmarkLatest.nifty50 || 0) * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-black/[0.06] bg-gray-50 px-3 py-2">
+                        <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-gray-400">S&P 500</div>
+                        <div className="mt-1 font-mono text-sm font-semibold text-gray-900">
+                          {((benchmarkLatest.sp500 || 0) * 100).toFixed(1)}%
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <EmptyState title="Benchmark data unavailable" subtitle="We couldn’t load the 6M benchmark comparison yet." />
+              )
+            ) : (
+              perf.length > 0 ? (
+                <PerformanceChart data={perf} costBasis={invested} />
+              ) : (
+                <EmptyState title="No performance history yet" subtitle="Add holdings to start tracking performance." />
+              )
+            )}
+            {chartTab === "value" && (
+              <div className="mt-4 flex justify-center">
+                <div className="inline-flex items-center border border-black/[0.08] rounded-full p-0.5">
+                  {RANGES.map((token) => (
+                    <button
+                      key={token}
+                      onClick={() => setRange(token)}
+                      className={`px-4 py-1 text-[11px] font-mono font-medium rounded-full transition-colors ${
+                        range === token ? "bg-gray-900 text-white" : "text-gray-500 hover:text-gray-900"
+                      }`}
+                    >
+                      {token}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </Card>
         </div>
 

@@ -8,28 +8,11 @@ const readOnboarded = () => {
   }
 };
 
-const readToken = () => {
-  try {
-    return localStorage.getItem("qp_token");
-  } catch {
-    return null;
-  }
-};
-
 export const usePortfolioStore = create((set) => ({
-  token: typeof window !== "undefined" ? readToken() : null,
   portfolioId: null,
   portfolioName: null,
   regime: null,
   onboarded: typeof window !== "undefined" ? readOnboarded() : false,
-
-  setToken: (token) => {
-    try {
-      if (token) localStorage.setItem("qp_token", token);
-      else localStorage.removeItem("qp_token");
-    } catch {}
-    set({ token });
-  },
   setPortfolio: (id, name) => set({ portfolioId: id, portfolioName: name }),
   setRegime: (regime) => set({ regime }),
   completeOnboarding: () => {
@@ -40,11 +23,9 @@ export const usePortfolioStore = create((set) => ({
   },
   logout: () => {
     try {
-      localStorage.removeItem("qp_token");
       localStorage.removeItem("qp_onboarded");
     } catch {}
     set({
-      token: null,
       portfolioId: null,
       portfolioName: null,
       regime: null,

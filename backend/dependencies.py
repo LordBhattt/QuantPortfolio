@@ -1,15 +1,17 @@
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.cache.redis_cache import RedisCache
+from backend.config import get_settings
 from backend.data_types import CurrentUser
 from backend.database import get_db
 from backend.errors import AppError
 from backend.quant.data_fetcher import DataFetcher
 from backend.services.auth_service import decode_token, get_user_by_id
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
+settings = get_settings()
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token", auto_error=False)
 
 _cache: RedisCache | None = None
 _fetcher: DataFetcher | None = None
@@ -34,10 +36,15 @@ def get_fetcher() -> DataFetcher:
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
+    token: str | None = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> CurrentUser:
-    token_data = decode_token(token)
+    raw_token = request.cookies.get(settings.AUTH_COOKIE_NAME) or token
+    if not raw_token:
+        raise AppError("Authentication failed", "invalid_token", "Missing authentication cookie", 401)
+
+    token_data = decode_token(raw_token)
     user = await get_user_by_id(token_data.user_id, db)
     if user is None or not user.is_active:
         raise AppError("Authentication failed", "user_not_found", "User not found or inactive", 401)

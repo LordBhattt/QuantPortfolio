@@ -13,6 +13,8 @@ if str(PARENT_DIR) not in sys.path:
 from backend.config import get_settings
 
 settings = get_settings()
+PROJECT_ROOT = CURRENT_DIR.parent
+SQLITE_DATABASE_PATH = PROJECT_ROOT / "quantportfolio.db"
 
 metadata = MetaData(
     naming_convention={
@@ -29,6 +31,10 @@ class Base:
     metadata = metadata
 
 
+def build_sqlite_database_url() -> str:
+    return f"sqlite+aiosqlite:///{SQLITE_DATABASE_PATH.as_posix()}"
+
+
 def _engine_kwargs() -> dict:
     kwargs: dict = {
         "echo": settings.DEBUG,
@@ -40,8 +46,18 @@ def _engine_kwargs() -> dict:
     return kwargs
 
 
-engine = create_async_engine(settings.DATABASE_URL, **_engine_kwargs())
+def _create_engine(database_url: str):
+    return create_async_engine(database_url, **_engine_kwargs())
+
+
+engine = _create_engine(settings.DATABASE_URL)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+
+def configure_database(database_url: str) -> None:
+    global engine, AsyncSessionLocal
+    engine = _create_engine(database_url)
+    AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
 async def get_db() -> AsyncIterator[AsyncSession]:

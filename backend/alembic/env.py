@@ -9,7 +9,8 @@ from sqlalchemy import engine_from_config, pool
 BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 PROJECT_ROOT = os.path.abspath(os.path.join(BACKEND_DIR, ".."))
 
-load_dotenv(os.path.join(BACKEND_DIR, ".env"))
+load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+load_dotenv(os.path.join(BACKEND_DIR, ".env"), override=False)
 
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
@@ -28,7 +29,7 @@ raw_url = os.environ.get("DATABASE_URL", "")
 if not raw_url:
     raise RuntimeError("DATABASE_URL not found in .env")
 
-sync_url = raw_url.replace("+asyncpg", "+psycopg2")
+sync_url = raw_url.replace("+asyncpg", "+psycopg2").replace("+aiosqlite", "")
 config.set_main_option("sqlalchemy.url", sync_url)
 
 

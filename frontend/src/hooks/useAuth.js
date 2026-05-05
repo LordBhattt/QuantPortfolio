@@ -1,34 +1,23 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 
 import { getCurrentUser } from '../api/auth'
-import { usePortfolioStore } from '../store/portfolioStore'
+
+function getErrorMessage(error, fallback) {
+  return error?.response?.data?.detail || error?.message || fallback
+}
 
 export function useCurrentUser() {
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-  const token = usePortfolioStore((s) => s.token)
+  const query = useQuery({
+    queryKey: ['current-user'],
+    queryFn: getCurrentUser,
+    retry: false,
+    staleTime: 60_000,
+  })
 
-  const fetch = useCallback(async () => {
-    if (!token) {
-      setData(null)
-      setLoading(false)
-      return
-    }
-    setLoading(true)
-    setError(null)
-    try {
-      setData(await getCurrentUser())
-    } catch (err) {
-      setError(err.response?.data?.detail || err.message)
-    } finally {
-      setLoading(false)
-    }
-  }, [token])
-
-  useEffect(() => {
-    fetch()
-  }, [fetch])
-
-  return { data, loading, error, refetch: fetch }
+  return {
+    data: query.data ?? null,
+    loading: query.isLoading || query.isFetching,
+    error: getErrorMessage(query.error, null),
+    refetch: query.refetch,
+  }
 }

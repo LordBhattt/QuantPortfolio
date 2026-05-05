@@ -1,9 +1,10 @@
 import { Navigate } from 'react-router-dom'
 
-import { usePortfolioStore } from '../../store/portfolioStore'
+import { useCurrentUser } from '../../hooks/useAuth'
 
 export default function RequireAuth({ children }) {
-  const token = usePortfolioStore((s) => s.token)
-  if (!token) return <Navigate to="/login" replace />
+  const { data: currentUser, loading } = useCurrentUser()
+  if (loading) return null
+  if (!currentUser) return <Navigate to="/login" replace />
   return children
 }

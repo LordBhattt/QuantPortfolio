@@ -1,7 +1,8 @@
-"""Hidden Markov model market regime detector."""
+"""Market regime detector with an optional HMM backend."""
 
 import numpy as np
 import pandas as pd
+from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import StandardScaler
 
 
@@ -16,18 +17,27 @@ class RegimeDetector:
     def fit(self, market_returns: pd.Series) -> "RegimeDetector":
         try:
             from hmmlearn import hmm
-        except ImportError as exc:
-            raise RuntimeError("hmmlearn is required for regime detection") from exc
+        except ImportError:
+            hmm = None
 
-        self.model = hmm.GaussianHMM(
-            n_components=self.n_states,
-            covariance_type="full",
-            n_iter=200,
-            random_state=42,
-        )
         values = market_returns.values.reshape(-1, 1)
         scaled = self.scaler.fit_transform(values)
-        self.model.fit(scaled)
+        if hmm is not None:
+            self.model = hmm.GaussianHMM(
+                n_components=self.n_states,
+                covariance_type="full",
+                n_iter=200,
+                random_state=42,
+            )
+            self.model.fit(scaled)
+        else:
+            self.model = GaussianMixture(
+                n_components=self.n_states,
+                covariance_type="full",
+                max_iter=200,
+                random_state=42,
+            )
+            self.model.fit(scaled)
         means = self.model.means_.flatten()
         self._state_order = list(np.argsort(means)[::-1])
         self.is_fitted = True

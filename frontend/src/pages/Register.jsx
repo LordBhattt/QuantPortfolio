@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
-import { login, register } from '../api/auth'
+import { register } from '../api/auth'
 import { usePortfolioStore } from '../store/portfolioStore'
 
 export default function Register() {
@@ -10,7 +10,6 @@ export default function Register() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const setToken = usePortfolioStore((s) => s.setToken)
   const navigate = useNavigate()
 
   const handleSubmit = async (e) => {
@@ -23,9 +22,7 @@ export default function Register() {
         password,
         full_name: fullName || null,
       })
-      const { access_token } = await login({ email, password })
-      setToken(access_token)
-      navigate('/dashboard')
+      navigate(usePortfolioStore.getState().onboarded ? '/dashboard' : '/onboarding')
     } catch (err) {
       setError(err.response?.data?.detail || 'Registration failed')
     } finally {

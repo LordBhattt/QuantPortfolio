@@ -1,25 +1,22 @@
-import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 
 import { runOptimization } from "../api/optimization";
 import { usePortfolioStore } from "../store/portfolioStore";
 
+function getErrorMessage(error, fallback) {
+  return error?.response?.data?.detail || error?.message || fallback;
+}
+
 export function useOptimize() {
-  const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
   const portfolioId = usePortfolioStore((s) => s.portfolioId);
   const setRegime = usePortfolioStore((s) => s.setRegime);
 
-  const run = async ({ riskTolerance, constraints, userViews, useLstm, useRegime }) => {
-    if (!portfolioId) {
-      setError("Create or select a portfolio before running optimization.");
-      return;
-    }
+  const mutation = useMutation({
+    mutationFn: async ({ riskTolerance, constraints, userViews, useLstm, useRegime }) => {
+      if (!portfolioId) {
+        throw new Error("Create or select a portfolio before running optimization.");
+      }
 
-    setLoading(true);
-    setError(null);
-
-    try {
       const mappedConstraints = constraints
         ? Object.fromEntries(
             Object.entries(constraints).map(([key, value]) => [
@@ -45,15 +42,19 @@ export function useOptimize() {
         use_regime_scaling: useRegime,
       };
 
-      const data = await runOptimization(payload);
-      setResult(data);
+      return runOptimization(payload);
+    },
+    onSuccess: (data) => {
       setRegime(data.regime);
-    } catch (err) {
-      setError(err.response?.data?.detail || "Optimization failed");
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+  });
 
-  return { run, result, loading, error };
+  const run = (payload) => mutation.mutate(payload);
+
+  return {
+    run,
+    result: mutation.data ?? null,
+    loading: mutation.isPending,
+    error: getErrorMessage(mutation.error, null),
+  };
 }

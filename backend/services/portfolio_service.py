@@ -80,6 +80,48 @@ async def add_holding(payload: HoldingCreate, portfolio_id: UUID, user_id: UUID,
     return HoldingOut.model_validate(result.mappings().one())
 
 
+async def add_holdings(
+    payloads: list[HoldingCreate],
+    portfolio_id: UUID,
+    user_id: UUID,
+    db: AsyncSession,
+) -> list[HoldingOut]:
+    await _get_portfolio_record(portfolio_id, user_id, db)
+    if not payloads:
+        return []
+
+    tickers = [payload.ticker for payload in payloads]
+    asset_result = await db.execute(select(assets).where(assets.c.ticker.in_(tickers)))
+    asset_rows = {row["ticker"]: row for row in asset_result.mappings().all()}
+    missing_tickers = [ticker for ticker in tickers if ticker not in asset_rows]
+    if missing_tickers:
+        raise AppError(
+            "Holding creation failed",
+            "asset_not_found",
+            f"Asset {', '.join(missing_tickers)} not found",
+            404,
+        )
+
+    statement = (
+        insert(holdings)
+        .values(
+            [
+                {
+                    "portfolio_id": portfolio_id,
+                    "ticker": payload.ticker,
+                    "quantity": payload.quantity,
+                    "avg_buy_price": payload.avg_buy_price,
+                    "buy_currency": payload.buy_currency,
+                }
+                for payload in payloads
+            ]
+        )
+        .returning(holdings)
+    )
+    result = await db.execute(statement)
+    return [HoldingOut.model_validate(row) for row in result.mappings().all()]
+
+
 async def list_holdings(portfolio_id: UUID, user_id: UUID, db: AsyncSession) -> list[HoldingOut]:
     await _get_portfolio_record(portfolio_id, user_id, db)
     result = await db.execute(
