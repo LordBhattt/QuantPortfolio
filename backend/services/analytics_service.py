@@ -10,8 +10,9 @@ from backend.quant.covariance import compute_covariance
 from backend.quant.data_fetcher import DataFetcher
 from backend.quant.factor_model import fama_french_regression
 from backend.quant.returns import align_returns
-from backend.schemas.analytics import FactorExposure, PerformanceAttribution, PerformancePoint, PortfolioAnalytics
+from backend.schemas.analytics import BenchmarkPoint, FactorExposure, PerformanceAttribution, PerformancePoint, PortfolioAnalytics
 from backend.services.portfolio_service import load_portfolio_snapshot
+ROLLING_BENCHMARK_WINDOW_POINTS = 126
 
 
 async def get_factor_exposure(
@@ -149,20 +150,21 @@ async def get_portfolio_analytics(
         for ticker, series in price_series_inr.items()
     }
     performance_series: list[PerformancePoint] = []
+    benchmark_series: list[BenchmarkPoint] = []
     if value_series:
         portfolio_frame = pd.DataFrame(value_series).dropna(how="all").ffill().dropna(how="all")
         if not portfolio_frame.empty:
             portfolio_series = portfolio_frame.sum(axis=1)
             try:
                 benchmark_frame = await fetcher.get_price_history("SPY", "yahoo", days=365)
-                benchmark_series = (benchmark_frame["close"].astype(float) * usd_inr).reindex(portfolio_series.index).ffill().bfill()
-                if not benchmark_series.empty and benchmark_series.iloc[0] != 0:
-                    benchmark_series = benchmark_series / benchmark_series.iloc[0] * portfolio_series.iloc[0]
+                benchmark_value_series = (benchmark_frame["close"].astype(float) * usd_inr).reindex(portfolio_series.index).ffill().bfill()
+                if not benchmark_value_series.empty and benchmark_value_series.iloc[0] != 0:
+                    benchmark_value_series = benchmark_value_series / benchmark_value_series.iloc[0] * portfolio_series.iloc[0]
             except Exception:
-                benchmark_series = portfolio_series.copy()
+                benchmark_value_series = portfolio_series.copy()
 
             perf_frame = pd.concat(
-                [portfolio_series.rename("portfolio"), benchmark_series.rename("benchmark")],
+                [portfolio_series.rename("portfolio"), benchmark_value_series.rename("benchmark")],
                 axis=1,
             ).dropna()
             performance_series = [
@@ -173,6 +175,8 @@ async def get_portfolio_analytics(
                 )
                 for index, row in perf_frame.iterrows()
             ]
+
+            benchmark_series = await _build_benchmark_series(portfolio_series, fetcher)
 
     holdings_breakdown = sorted([
         PerformanceAttribution(
@@ -212,6 +216,7 @@ async def get_portfolio_analytics(
         total_pnl_inr=total_pnl_inr,
         total_pnl_pct=total_pnl_pct,
         performance_series=performance_series,
+        benchmark_series=benchmark_series,
         asset_class_allocation=asset_class_allocation,
         holdings_breakdown=holdings_breakdown,
         factor_exposure=factor_exposure,
@@ -238,3 +243,52 @@ async def _safe_factor_exposure(
             r_squared=0.0,
             residual_std=0.0,
         )
+
+
+async def _build_benchmark_series(portfolio_series: pd.Series, fetcher: DataFetcher) -> list[BenchmarkPoint]:
+    if portfolio_series.empty:
+        return []
+
+    rolling_window = portfolio_series.tail(ROLLING_BENCHMARK_WINDOW_POINTS).astype(float)
+    if len(rolling_window) < 2 or rolling_window.iloc[0] == 0:
+        return []
+
+    portfolio_returns = rolling_window / rolling_window.iloc[0] - 1.0
+
+    try:
+        nifty_frame, sp500_frame = await asyncio.gather(
+            fetcher.get_price_history("^NSEI", "yahoo", days=183),
+            fetcher.get_price_history("SPY", "yahoo", days=183),
+        )
+    except Exception:
+        return []
+
+    nifty_returns = nifty_frame["close"].astype(float).reindex(rolling_window.index).ffill().bfill()
+    sp500_returns = sp500_frame["close"].astype(float).reindex(rolling_window.index).ffill().bfill()
+
+    if nifty_returns.empty or sp500_returns.empty:
+        return []
+    if nifty_returns.iloc[0] == 0 or sp500_returns.iloc[0] == 0:
+        return []
+
+    nifty_returns = nifty_returns / nifty_returns.iloc[0] - 1.0
+    sp500_returns = sp500_returns / sp500_returns.iloc[0] - 1.0
+
+    perf_frame = pd.concat(
+        [
+            portfolio_returns.rename("portfolio"),
+            nifty_returns.rename("nifty50"),
+            sp500_returns.rename("sp500"),
+        ],
+        axis=1,
+    ).dropna()
+
+    return [
+        BenchmarkPoint(
+            date=str(index.date()),
+            portfolio=float(row["portfolio"]),
+            nifty50=float(row["nifty50"]),
+            sp500=float(row["sp500"]),
+        )
+        for index, row in perf_frame.iterrows()
+    ]

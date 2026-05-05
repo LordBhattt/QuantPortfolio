@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { Bell, CheckCheck, ChevronDown, ExternalLink, Loader2, Sparkles } from "lucide-react";
 
+import { markAlertRead, markAllAlertsRead } from "../../api/alerts";
+import { logout as logoutApi } from "../../api/auth";
 import { useCurrentUser } from "../../hooks/useAuth";
+import { useAlerts } from "../../hooks/useAlerts";
 import { usePortfolios } from "../../hooks/usePortfolio";
 import { usePortfolioStore } from "../../store/portfolioStore";
 import Badge from "../ui-qp/Badge";
@@ -13,14 +18,6 @@ const links = [
   { to: "/analytics", label: "Analytics" },
   { to: "/holdings", label: "Holdings" },
 ];
-
-function ChevronDown({ className = "" }) {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
-      <path d="M6 9l6 6 6-6" />
-    </svg>
-  );
-}
 
 function getInitials(user) {
   const source = user?.full_name?.trim() || user?.email?.trim() || "QuantPortfolio";
@@ -35,6 +32,7 @@ function getInitials(user) {
 
 export default function Navbar() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const regime = usePortfolioStore((s) => s.regime);
   const portfolioId = usePortfolioStore((s) => s.portfolioId);
   const portfolioName = usePortfolioStore((s) => s.portfolioName);
@@ -43,29 +41,62 @@ export default function Navbar() {
 
   const { data: portfolios = [], loading: portfoliosLoading } = usePortfolios();
   const { data: currentUser } = useCurrentUser();
+  const { data: alerts = [], loading: alertsLoading, refetch: refetchAlerts } = useAlerts();
 
   const [portfolioOpen, setPortfolioOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const [locallyReadIds, setLocallyReadIds] = useState(new Set());
   const portfolioRef = useRef(null);
   const accountRef = useRef(null);
+  const alertsRef = useRef(null);
 
   const initials = useMemo(() => getInitials(currentUser), [currentUser]);
   const activePortfolioName = portfolioName || (portfoliosLoading ? "Loading..." : "Select Portfolio");
+  const unreadCount = alerts.filter((alert) => !locallyReadIds.has(alert.id)).length;
+  const visibleAlerts = alerts.slice(0, 5);
 
   useEffect(() => {
     const onDown = (event) => {
       if (portfolioRef.current && !portfolioRef.current.contains(event.target)) setPortfolioOpen(false);
       if (accountRef.current && !accountRef.current.contains(event.target)) setAccountOpen(false);
+      if (alertsRef.current && !alertsRef.current.contains(event.target)) setAlertsOpen(false);
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
-  const handleLogout = () => {
-    logout();
-    setAccountOpen(false);
-    setPortfolioOpen(false);
-    navigate("/login");
+  const handleViewPortfolio = (portfolioId, portfolioName) => {
+    setPortfolio(portfolioId, portfolioName);
+    setAlertsOpen(false);
+    navigate("/dashboard");
+  };
+
+  const handleOptimizeNow = async (portfolioId, portfolioName, alertId) => {
+    setPortfolio(portfolioId, portfolioName);
+    setLocallyReadIds((current) => new Set([...current, alertId]));
+    await markAlertRead(alertId);
+    await refetchAlerts();
+    setAlertsOpen(false);
+    navigate("/optimize");
+  };
+
+  const handleMarkAllRead = async () => {
+    await markAllAlertsRead();
+    setLocallyReadIds(new Set());
+    await refetchAlerts();
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logoutApi();
+    } finally {
+      await queryClient.removeQueries({ queryKey: ["current-user"] });
+      logout();
+      setAccountOpen(false);
+      setPortfolioOpen(false);
+      navigate("/login");
+    }
   };
 
   return (
@@ -130,6 +161,93 @@ export default function Navbar() {
 
       <div className="ml-auto flex items-center gap-4">
         {regime && <Badge regime={regime} />}
+
+        <div ref={alertsRef} className="relative">
+          <button
+            onClick={() => setAlertsOpen((value) => !value)}
+            className="relative flex h-9 w-9 items-center justify-center rounded-full border border-black/[0.08] bg-white text-gray-700 hover:bg-black/[0.03] transition-colors"
+            aria-label="Notifications"
+          >
+            <Bell className="h-4 w-4" />
+            {unreadCount > 0 && (
+              <span className="absolute -right-1 -top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
+
+          {alertsOpen && (
+            <div className="absolute right-0 top-11 z-50 w-[360px] overflow-hidden rounded-2xl border border-black/[0.08] bg-white shadow-card-hover animate-fadeUp">
+              <div className="flex items-center justify-between border-b border-black/[0.06] px-4 py-3">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">Alerts</div>
+                  <div className="text-[11px] font-mono text-gray-500">Unread portfolio drift and drawdown notices</div>
+                </div>
+                <button
+                  onClick={handleMarkAllRead}
+                  className="inline-flex items-center gap-1 rounded-full border border-black/[0.08] px-2.5 py-1 text-[11px] font-medium text-gray-600 hover:bg-black/[0.03]"
+                >
+                  <CheckCheck className="h-3.5 w-3.5" />
+                  Mark all read
+                </button>
+              </div>
+
+              <div className="max-h-[420px] overflow-y-auto p-2">
+                {alertsLoading && <div className="px-4 py-6 text-sm text-gray-500">Loading alerts...</div>}
+                {!alertsLoading && visibleAlerts.length === 0 && (
+                  <div className="flex flex-col items-center gap-2 px-4 py-8 text-center text-gray-500">
+                    <Sparkles className="h-5 w-5 text-gray-300" />
+                    <div className="text-sm font-medium text-gray-700">No unread alerts</div>
+                    <div className="text-xs text-gray-500">Your portfolios are currently within range.</div>
+                  </div>
+                )}
+
+                {visibleAlerts.map((alert) => {
+                  const isRead = locallyReadIds.has(alert.id) || Boolean(alert.is_read);
+                  const portfolio = alert.portfolio;
+                  const createdAt = alert.created_at ? new Date(alert.created_at) : null;
+
+                  return (
+                    <div
+                      key={alert.id}
+                      className={`mb-2 rounded-xl border p-3 transition-colors ${
+                        isRead ? "border-black/[0.06] bg-gray-50 opacity-75" : "border-red-200 bg-red-50/70"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-mono uppercase tracking-[0.14em] text-gray-400">{portfolio?.name || "Portfolio"}</div>
+                          <p className="mt-1 text-sm font-medium text-gray-900">{alert.message}</p>
+                          <div className="mt-2 text-[11px] font-mono text-gray-500">
+                            {createdAt ? createdAt.toLocaleString("en-IN") : "Just now"}
+                          </div>
+                        </div>
+                        <div className={`mt-0.5 h-2 w-2 rounded-full ${isRead ? "bg-gray-300" : "bg-red-500"}`} />
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          onClick={() => handleViewPortfolio(alert.portfolio_id, portfolio?.name || "Portfolio")}
+                          className="inline-flex items-center gap-1 rounded-full border border-black/[0.08] px-3 py-1.5 text-[11px] font-medium text-gray-700 hover:bg-black/[0.03]"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          View Portfolio
+                        </button>
+                        <button
+                          onClick={() => handleOptimizeNow(alert.portfolio_id, portfolio?.name || "Portfolio", alert.id)}
+                          className="inline-flex items-center gap-1 rounded-full bg-gray-900 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-gray-800"
+                        >
+                          <Loader2 className="h-3.5 w-3.5" />
+                          Optimize Now
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
 
         <div ref={accountRef} className="relative">
           <button

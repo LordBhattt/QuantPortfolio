@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { createPortfolio } from "../../api/portfolios";
+import { useCurrentUser } from "../../hooks/useAuth";
 import { usePortfolios } from "../../hooks/usePortfolio";
 import { usePortfolioStore } from "../../store/portfolioStore";
 
@@ -64,10 +65,10 @@ function Icon({ k }) {
 
 export default function OnboardingModal() {
   const navigate = useNavigate();
-  const token = usePortfolioStore((s) => s.token);
   const onboarded = usePortfolioStore((s) => s.onboarded);
   const completeOnboarding = usePortfolioStore((s) => s.completeOnboarding);
   const setPortfolio = usePortfolioStore((s) => s.setPortfolio);
+  const { data: currentUser, loading: authLoading } = useCurrentUser();
   const { data: portfolios = [], loading: portfoliosLoading } = usePortfolios();
 
   const [step, setStep] = useState(0);
@@ -80,7 +81,7 @@ export default function OnboardingModal() {
 
   const riskProfile = useMemo(() => RISK_PROFILES[risk], [risk]);
 
-  if (!token || onboarded || portfoliosLoading || portfolios.length > 0) return null;
+  if (authLoading || !currentUser || onboarded || portfoliosLoading || portfolios.length > 0) return null;
 
   const toggleAsset = (key) => {
     const next = new Set(assets);

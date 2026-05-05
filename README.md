@@ -340,9 +340,10 @@ All routes currently live under `/api/v1`.
 
 ### Auth
 
-- `POST /api/v1/auth/register`
-- `POST /api/v1/auth/token`
+- `POST /api/v1/auth/register` sets the auth cookie and returns the created user
+- `POST /api/v1/auth/token` sets the auth cookie and returns the authenticated user
 - `GET /api/v1/auth/me`
+- `POST /api/v1/auth/logout` clears the auth cookie
 
 ### Portfolios and holdings
 
@@ -515,7 +516,24 @@ Open:
 
 - `http://localhost:5173`
 
-### 9. First-run flow
+### 9. Docker deployment
+
+If you want the full stack in one command, use Docker Compose from the repository root:
+
+```bash
+docker compose up --build
+```
+
+That starts:
+
+- PostgreSQL on `localhost:5432`
+- Redis on `localhost:6379`
+- FastAPI on `localhost:8000`
+- nginx serving the Vite build on `http://localhost:8080`
+
+The frontend is wired to call the backend on `http://localhost:8000`, and the backend CORS list already allows the Docker frontend origin.
+
+### 10. First-run flow
 
 Once both apps are running:
 

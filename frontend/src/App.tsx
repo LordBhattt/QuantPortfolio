@@ -1,4 +1,5 @@
 import { lazy, Suspense } from "react";
+import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
 
@@ -10,6 +11,7 @@ import Navbar from "./components/layout/Navbar.jsx";
 import RequireAuth from "./components/layout/RequireAuth.jsx";
 import OnboardingModal from "./components/onboarding/OnboardingModal.jsx";
 import NotFound from "./pages/NotFound.tsx";
+import { usePortfolioStore } from "./store/portfolioStore";
 
 const Dashboard = lazy(() => import("./pages/Dashboard.jsx"));
 const Optimize = lazy(() => import("./pages/Optimize.jsx"));
@@ -18,6 +20,7 @@ const Analytics = lazy(() => import("./pages/Analytics.jsx"));
 const Holdings = lazy(() => import("./pages/Holdings.jsx"));
 const Login = lazy(() => import("./pages/Login.jsx"));
 const Register = lazy(() => import("./pages/Register.jsx"));
+const Onboarding = lazy(() => import("./pages/Onboarding.tsx"));
 
 const queryClient = new QueryClient();
 
@@ -48,6 +51,19 @@ function PublicPage({ children }) {
   return <Suspense fallback={<LoadingFallback />}>{children}</Suspense>;
 }
 
+function RequireOnboarding({ children }: { children: ReactNode }) {
+  const onboarded = usePortfolioStore((state) => state.onboarded);
+  if (!onboarded) {
+    return <Navigate to="/onboarding" replace />;
+  }
+  return children;
+}
+
+function HomeRedirect() {
+  const onboarded = usePortfolioStore((state) => state.onboarded);
+  return <Navigate to={onboarded ? "/dashboard" : "/onboarding"} replace />;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -71,16 +87,28 @@ const App = () => (
               </PublicPage>
             }
           />
+          <Route
+            path="/onboarding"
+            element={
+              <RequireAuth>
+                <PublicPage>
+                  <Onboarding />
+                </PublicPage>
+              </RequireAuth>
+            }
+          />
 
           <Route
             path="/"
             element={
               <RequireAuth>
-                <ProtectedShell />
+                <RequireOnboarding>
+                  <ProtectedShell />
+                </RequireOnboarding>
               </RequireAuth>
             }
           >
-            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route index element={<HomeRedirect />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="optimize" element={<Optimize />} />
             <Route path="risk" element={<Risk />} />

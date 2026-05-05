@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, String, func
+from sqlalchemy import Float, JSON, Column, DateTime, ForeignKey, String, func
 from sqlalchemy import Uuid
 
 from backend.database import metadata
@@ -30,6 +30,8 @@ if portfolios is None:
         Column("description", String(500), nullable=True),
         Column("base_currency", String(3), nullable=False, default="INR", server_default="INR"),
         Column("constraints", JSON, nullable=False, default=default_constraints),
+        Column("last_optimized_weights", JSON, nullable=True),
+        Column("peak_value", Float, nullable=True),
         Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
         Column("updated_at", DateTime(timezone=True), nullable=True, onupdate=func.now()),
     )

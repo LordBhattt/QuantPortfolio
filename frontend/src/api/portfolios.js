@@ -21,5 +21,8 @@ export const getHoldings = (portfolioId) =>
 export const addHolding = (portfolioId, payload) =>
   client.post(`/api/v1/portfolios/${portfolioId}/holdings`, payload).then((r) => r.data)
 
+export const addHoldingsBulk = (portfolioId, payload) =>
+  client.post(`/api/v1/portfolios/${portfolioId}/holdings/bulk`, payload).then((r) => r.data)
+
 export const deleteHolding = (portfolioId, holdingId) =>
   client.delete(`/api/v1/portfolios/${portfolioId}/holdings/${holdingId}`)

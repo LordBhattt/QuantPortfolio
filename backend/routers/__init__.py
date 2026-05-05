@@ -1,3 +1,3 @@
-from backend.routers import analytics, assets, auth, optimization, portfolio, risk
+"""API router package."""
 
-__all__ = ["analytics", "assets", "auth", "optimization", "portfolio", "risk"]
+__all__ = ["alerts", "analytics", "assets", "auth", "onboarding", "optimization", "portfolio", "risk"]

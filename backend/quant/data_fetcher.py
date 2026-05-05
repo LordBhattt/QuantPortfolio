@@ -4,6 +4,7 @@ Methods return raw DataFrames or primitive payloads without business logic.
 """
 
 import asyncio
+import contextlib
 import io
 import zipfile
 from datetime import datetime, timedelta, timezone
@@ -30,20 +31,29 @@ COINGECKO_ID_MAP = {
 class DataFetcher:
     def __init__(self, cache: RedisCache) -> None:
         self.cache = cache
-        self.client = httpx.AsyncClient(timeout=30.0)
+        self.client = httpx.AsyncClient(timeout=30.0, headers=self._browser_headers())
+
+    @staticmethod
+    def _browser_headers() -> dict[str, str]:
+        return {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.nseindia.com/",
+        }
 
     async def close(self) -> None:
         await self.client.aclose()
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-    async def _get_json(self, url: str, params: dict | None = None) -> dict:
-        response = await self.client.get(url, params=params)
+    async def _get_json(self, url: str, params: dict | None = None, headers: dict[str, str] | None = None) -> dict:
+        response = await self.client.get(url, params=params, headers=headers)
         response.raise_for_status()
         return response.json()
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-    async def _get_text(self, url: str, params: dict | None = None) -> str:
-        response = await self.client.get(url, params=params)
+    async def _get_text(self, url: str, params: dict | None = None, headers: dict[str, str] | None = None) -> str:
+        response = await self.client.get(url, params=params, headers=headers)
         response.raise_for_status()
         return response.text
 
@@ -128,15 +138,90 @@ class DataFetcher:
         frame["volume"] = 0.0
         return frame[["date", "open", "high", "low", "close", "volume"]].set_index("date").sort_index()
 
+    async def _fetch_nse_last_price(self, ticker: str) -> float | None:
+        symbol = ticker.upper().replace(".NS", "")
+        cache_key = f"nse:last_price:{symbol}"
+        cached = await self.cache.get(cache_key)
+        if cached is not None:
+            with contextlib.suppress(ValueError):
+                return float(cached)
+
+        url = f"https://www.nseindia.com/api/quote-equity?symbol={symbol}"
+        try:
+            data = await self._get_json(url, headers=self._browser_headers())
+            price = float(data["priceInfo"]["lastPrice"])
+        except Exception:
+            return None
+
+        await self.cache.set(cache_key, str(price), ttl=300)
+        return price
+
+    async def _fetch_usd_inr_rate(self) -> float:
+        try:
+            frame = await self._fetch_yahoo("INR=X", days=5)
+            return float(frame["close"].iloc[-1])
+        except Exception:
+            pass
+
+        url = "https://open.er-api.com/v6/latest/USD"
+        data = await self._get_json(url, headers=self._browser_headers())
+        return float(data["rates"]["INR"])
+
     async def get_usd_inr_rate(self) -> float:
         cache_key = "fx:usd_inr"
         cached = await self.cache.get(cache_key)
         if cached:
             return float(cached)
-        frame = await self._fetch_yahoo("INR=X", days=5)
-        rate = float(frame["close"].iloc[-1])
+        rate = await self._fetch_usd_inr_rate()
         await self.cache.set(cache_key, str(rate), ttl=3600)
         return rate
+
+    async def get_latest_price_in_inr(
+        self,
+        ticker: str,
+        source: str,
+        exchange: str | None = None,
+        currency: str | None = None,
+    ) -> float | None:
+        normalized_source = source.lower()
+        normalized_exchange = (exchange or "").upper()
+        normalized_currency = (currency or "INR").upper()
+
+        if normalized_source == "coingecko":
+            frame = await self.get_price_history(ticker, source, days=5)
+            if frame.empty:
+                return None
+            price = float(frame["close"].iloc[-1])
+            if normalized_currency == "USD":
+                price *= await self.get_usd_inr_rate()
+            return price
+
+        if normalized_exchange == "NSE" or ticker.upper().endswith(".NS"):
+            quote = await self._fetch_nse_last_price(ticker)
+            if quote is not None:
+                return quote
+
+        if normalized_source == "amfi":
+            frame = await self.get_price_history(ticker, source, days=5)
+            if frame.empty:
+                return None
+            return float(frame["close"].iloc[-1])
+
+        try:
+            frame = await self.get_price_history(ticker, source, days=5)
+        except Exception:
+            return None
+
+        if frame.empty:
+            return None
+
+        price = float(frame["close"].iloc[-1])
+        if normalized_currency == "USD":
+            try:
+                price *= await self.get_usd_inr_rate()
+            except Exception:
+                return None
+        return price
 
     async def get_fama_french_factors(self) -> pd.DataFrame:
         cache_key = "ff5:factors"

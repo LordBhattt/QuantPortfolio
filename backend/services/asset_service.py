@@ -61,6 +61,15 @@ DEFAULT_ASSETS: list[dict] = [
         "is_active": True,
     },
     {
+        "ticker": "BNB",
+        "name": "BNB",
+        "asset_class": AssetClass.CRYPTO,
+        "exchange": "CRYPTO",
+        "currency": "USD",
+        "data_source": "coingecko",
+        "is_active": True,
+    },
+    {
         "ticker": "GLD",
         "name": "SPDR Gold Shares",
         "asset_class": AssetClass.GOLD,

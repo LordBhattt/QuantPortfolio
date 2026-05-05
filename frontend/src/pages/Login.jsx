@@ -2,14 +2,12 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { login } from '../api/auth'
-import { usePortfolioStore } from '../store/portfolioStore'
 
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const setToken = usePortfolioStore((s) => s.setToken)
   const navigate = useNavigate()
 
   const handleSubmit = async (e) => {
@@ -17,8 +15,7 @@ export default function Login() {
     setLoading(true)
     setError(null)
     try {
-      const { access_token } = await login({ email, password })
-      setToken(access_token)
+      await login({ email, password })
       navigate('/dashboard')
     } catch (err) {
       setError(err.response?.data?.detail || 'Login failed')

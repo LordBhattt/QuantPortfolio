@@ -9,6 +9,13 @@ class PerformancePoint(BaseModel):
     benchmark: float
 
 
+class BenchmarkPoint(BaseModel):
+    date: str
+    portfolio: float
+    nifty50: float
+    sp500: float
+
+
 class FactorExposure(BaseModel):
     portfolio_id: uuid.UUID
     alpha: float
@@ -49,6 +56,7 @@ class PortfolioAnalytics(BaseModel):
     total_pnl_inr: float
     total_pnl_pct: float
     performance_series: list[PerformancePoint] = Field(default_factory=list)
+    benchmark_series: list[BenchmarkPoint] = Field(default_factory=list)
     asset_class_allocation: dict[str, float]
     holdings_breakdown: list[PerformanceAttribution]
     factor_exposure: FactorExposure
