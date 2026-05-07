@@ -38,9 +38,13 @@ export default function Dashboard() {
   const { data: holdings, loading: holdingsLoading } = useHoldings(portfolioId);
   const { data: risk, loading: riskLoading } = useRiskMetrics(portfolioId);
 
-  const isLoading = portfolioId && (analyticsLoading || holdingsLoading || riskLoading);
+  const heroLoading = Boolean(portfolioId) && analyticsLoading;
+  const summaryLoading = Boolean(portfolioId) && analyticsLoading;
+  const chartLoading = Boolean(portfolioId) && analyticsLoading;
+  const allocationLoading = Boolean(portfolioId) && analyticsLoading;
+  const holdingsTableLoading = Boolean(portfolioId) && holdingsLoading;
   const holdingsList = holdings || [];
-  const empty = !holdingsLoading && holdingsList.length === 0;
+  const empty = !holdingsTableLoading && holdingsList.length === 0;
   const perfSource = analytics?.performance_series || [];
   const benchmarkSource = analytics?.benchmark_series || [];
   const perf = perfSource.slice(-RANGE_LEN[range]);
@@ -63,14 +67,14 @@ export default function Dashboard() {
 
   return (
     <PageWrapper title="Dashboard" subtitle="Portfolio overview - live market view">
-      {analyticsError && !empty && !isLoading && (
+      {analyticsError && !empty && !chartLoading && (
         <Card className="p-4 mb-6 border border-red-200 bg-red-50">
           <p className="text-sm font-mono text-red-700">{analyticsError}</p>
         </Card>
       )}
 
       <div className="animate-fadeUp opacity-0 mb-6" style={{ animationDelay: "0ms" }}>
-        {isLoading ? (
+        {heroLoading ? (
           <SkeletonBlock className="h-56 w-full" />
         ) : (
           <HeroBand
@@ -87,21 +91,21 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="animate-fadeUp opacity-0" style={{ animationDelay: "60ms" }}>
-          {isLoading ? (
+          {summaryLoading ? (
             <SkeletonBlock className="h-40 w-full" />
           ) : (
             <InvestedVsCurrentCard invested={invested} current={total} />
           )}
         </div>
         <div className="animate-fadeUp opacity-0" style={{ animationDelay: "120ms" }}>
-          {isLoading ? (
+          {summaryLoading ? (
             <SkeletonBlock className="h-40 w-full" />
           ) : (
             <TotalReturnCard returnPct={totalReturnPct} absoluteGain={totalPnl} xirr={annualisedReturnPct} />
           )}
         </div>
         <div className="animate-fadeUp opacity-0" style={{ animationDelay: "180ms" }}>
-          {isLoading ? (
+          {riskLoading ? (
             <SkeletonBlock className="h-40 w-full" />
           ) : (
             <RiskSnapshotCard
@@ -138,7 +142,7 @@ export default function Dashboard() {
                 ))}
               </div>
             </div>
-            {isLoading ? (
+            {chartLoading ? (
               <SkeletonBlock className="h-[300px] w-full" />
             ) : chartTab === "benchmark" ? (
               benchmarkSource.length > 0 ? (
@@ -200,7 +204,7 @@ export default function Dashboard() {
         <div className="animate-fadeUp opacity-0" style={{ animationDelay: "300ms" }}>
           <Card className="p-5 h-full">
             <h2 className="text-[15px] font-sans font-semibold text-gray-900 mb-4">Allocation</h2>
-            {isLoading ? (
+            {allocationLoading ? (
               <SkeletonBlock className="h-[300px] w-full" />
             ) : allocation.length > 0 ? (
               <AllocationDonut data={allocation} />
@@ -216,7 +220,7 @@ export default function Dashboard() {
           <h2 className="text-[15px] font-sans font-semibold text-gray-900 mb-4">Holdings</h2>
           <HoldingsTable
             holdings={mergedHoldings.slice(0, 5)}
-            loading={Boolean(isLoading)}
+            loading={holdingsTableLoading}
             onAdd={() => navigate("/holdings")}
           />
         </Card>

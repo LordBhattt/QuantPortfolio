@@ -39,6 +39,7 @@ def _engine_kwargs() -> dict:
     kwargs: dict = {
         "echo": settings.DEBUG,
         "pool_pre_ping": True,
+        "connect_args": {"statement_cache_size": 0},
     }
     if not settings.DATABASE_URL.startswith("sqlite"):
         kwargs["pool_size"] = 10
