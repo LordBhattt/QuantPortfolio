@@ -17,6 +17,7 @@ if PROJECT_ROOT not in sys.path:
 
 from backend.database import Base  # noqa: E402
 from backend.models import asset, holding, portfolio, user  # noqa: F401,E402
+from backend.models import investor_profile, portfolio_alert  # noqa: F401,E402
 
 config = context.config
 
@@ -25,11 +26,25 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-raw_url = os.environ.get("DATABASE_URL", "")
+# Use DIRECT_URL for migrations if available (Supabase requires direct connection
+# for DDL statements — pooled connections don't support CREATE TABLE etc.)
+# Falls back to DATABASE_URL if DIRECT_URL is not set.
+raw_url = os.environ.get("DIRECT_URL") or os.environ.get("DATABASE_URL", "")
 if not raw_url:
-    raise RuntimeError("DATABASE_URL not found in .env")
+    raise RuntimeError(
+        "Neither DIRECT_URL nor DATABASE_URL found in .env\n"
+        "Add DIRECT_URL=postgresql+asyncpg://... to your backend/.env file."
+    )
 
-sync_url = raw_url.replace("+asyncpg", "+psycopg2").replace("+aiosqlite", "")
+# Alembic runs synchronously — strip async drivers
+sync_url = (
+    raw_url
+    .replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+    .replace("postgresql+aiosqlite://", "sqlite:///")
+    .replace("+asyncpg", "+psycopg2")
+    .replace("+aiosqlite", "")
+)
+
 config.set_main_option("sqlalchemy.url", sync_url)
 
 
