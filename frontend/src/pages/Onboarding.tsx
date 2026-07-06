@@ -73,9 +73,15 @@ function formatPrice(value: number | null | undefined) {
 function defaultQuantityForRecommendation(item: PortfolioRecommendation) {
   const unitPrice = item.current_price_inr;
   if (!unitPrice || !Number.isFinite(unitPrice) || unitPrice <= 0) {
-    return 1;
+    // Price unavailable — use a safe fractional quantity that approximates
+    // the recommended INR amount assuming a high unit price (~₹1L).
+    // This prevents the old bug where 0.01 × ₹91L BTC = ₹91K overshoot.
+    const safeEstimatePrice = 100_000;
+    const quantity = item.recommended_amount_inr / safeEstimatePrice;
+    return Number(Math.max(quantity, 0.000001).toFixed(6));
   }
-  return Math.max(1, Math.floor(item.recommended_amount_inr / unitPrice));
+  const quantity = item.recommended_amount_inr / unitPrice;
+  return Number(Math.max(quantity, 0.000001).toFixed(6));
 }
 
 function formatLabel(value: string) {
@@ -253,10 +259,14 @@ export default function Onboarding() {
           throw new Error(`Enter a valid quantity for ${row.ticker}.`);
         }
 
+        const buyPrice = row.current_price_inr && Number.isFinite(row.current_price_inr) && row.current_price_inr > 0
+          ? row.current_price_inr
+          : row.recommended_amount_inr / quantity;
+
         return {
           ticker: row.ticker,
           quantity,
-          avg_buy_price: row.current_price_inr || row.recommended_amount_inr / quantity,
+          avg_buy_price: buyPrice,
           buy_currency: "INR",
         };
       });
@@ -621,6 +631,21 @@ export default function Onboarding() {
                 </div>
               </div>
             ))}
+          </div>
+
+          <div className="rounded-xl border border-black/[0.08] bg-gray-50 px-4 py-3 flex items-center justify-between">
+            <div className="text-xs font-mono uppercase tracking-[0.14em] text-gray-500">Estimated total investment</div>
+            <div className="text-sm font-semibold text-gray-900">
+              {formatAmount(
+                selectedRows.reduce((sum, row) => {
+                  const qty = Number(quantityDrafts[row.ticker]) || 0;
+                  const price = row.current_price_inr && Number.isFinite(row.current_price_inr) && row.current_price_inr > 0
+                    ? row.current_price_inr
+                    : row.recommended_amount_inr / Math.max(qty, 0.000001);
+                  return sum + qty * price;
+                }, 0)
+              )}
+            </div>
           </div>
 
           <DialogFooter>

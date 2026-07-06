@@ -53,7 +53,13 @@ export default function PerformanceChart({ data = [], costBasis }) {
           tick={{ fontSize: 10, fontFamily: "JetBrains Mono", fill: "hsl(var(--muted-foreground))" }}
           axisLine={false}
           tickLine={false}
-          tickFormatter={(value) => `\u20B9${(value / 100000).toFixed(0)}L`}
+          tickFormatter={(value) => {
+            const abs = Math.abs(value);
+            if (abs >= 1e7) return `\u20B9${(value / 1e7).toFixed(1)}Cr`;
+            if (abs >= 1e5) return `\u20B9${(value / 1e5).toFixed(1)}L`;
+            if (abs >= 1e3) return `\u20B9${(value / 1e3).toFixed(1)}K`;
+            return `\u20B9${value.toFixed(0)}`;
+          }}
           width={56}
         />
         <Tooltip content={<CustomTooltip />} />

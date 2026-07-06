@@ -8,6 +8,7 @@ import EmptyState from "../components/ui-qp/EmptyState";
 import { useMonteCarlo, useRiskMetrics } from "../hooks/useRisk";
 import { usePortfolioStore } from "../store/portfolioStore";
 import { formatINR, formatPct } from "../utils/format";
+import { ProbabilityCard } from "../components/dashboard/StatCards";
 
 const HORIZONS = ["3M", "6M", "1Y", "3Y"];
 const HORIZON_DAYS = { "3M": 63, "6M": 126, "1Y": 252, "3Y": 756 };
@@ -26,7 +27,7 @@ export default function Risk() {
 
   const isLoading = portfolioId && (riskLoading || mcLoading);
   const probLoss = (mc?.prob_loss ?? 0) * 100;
-  const probColor = probLoss >= 30 ? "text-red-600" : probLoss >= 10 ? "text-amber-600" : "text-gray-900";
+  const probProfit = Math.max(0, 100 - probLoss);
   const matrix = risk?.correlation_matrix || {};
   const tickers = Object.keys(matrix);
   const empty = [riskError, mcError].some((value) => value?.toLowerCase().includes("no holdings"));
@@ -96,12 +97,8 @@ export default function Risk() {
                 <MonteCarloChart data={mc?.percentiles || {}} />
               )}
 
-              <div className="mt-6 pt-5 border-t border-black/[0.06] flex items-end justify-between flex-wrap gap-4">
-                <div>
-                  <div className="text-[11px] font-sans font-semibold tracking-[0.14em] uppercase text-gray-400">Probability of Loss</div>
-                  <div className={`mt-1 text-4xl font-mono font-bold ${probColor}`}>{probLoss.toFixed(1)}%</div>
-                </div>
-                <div className="text-right text-xs font-mono text-gray-500">over a {horizon} horizon vs today&apos;s value</div>
+              <div className="mt-6 pt-5 border-t border-black/[0.06]">
+                <ProbabilityCard profit={probProfit} loss={probLoss} horizon={horizon} />
               </div>
             </Card>
           </div>

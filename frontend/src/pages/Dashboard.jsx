@@ -55,15 +55,16 @@ export default function Dashboard() {
 
   const total = analytics?.total_value_inr ?? 0;
   const totalPnl = analytics?.total_pnl_inr ?? 0;
-  const invested = Math.max(total - totalPnl, 0);
+  const invested = analytics?.total_invested_inr ?? Math.max(total - totalPnl, 0);
   const dayChange = analytics?.day_pnl_inr ?? 0;
   const dayChangePct = (analytics?.day_pnl_pct ?? 0) * 100;
   const totalReturnPct = (analytics?.total_pnl_pct ?? 0) * 100;
   const annualisedReturnPct = (risk?.annualised_return ?? analytics?.total_pnl_pct ?? 0) * 100;
+  const asOfDate = analytics?.as_of ? new Date(analytics.as_of) : new Date();
   const asOf = `As of ${new Intl.DateTimeFormat("en-IN", {
     dateStyle: "medium",
     timeStyle: "short",
-  }).format(new Date())}`;
+  }).format(asOfDate)}`;
 
   return (
     <PageWrapper title="Dashboard" subtitle="Portfolio overview - live market view">

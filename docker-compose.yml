@@ -32,15 +32,11 @@ services:
     env_file:
       - ./.env
     environment:
-      DATABASE_URL: postgresql+asyncpg://quantportfolio:quantportfolio@db:5432/quantportfolio
-      REDIS_URL: redis://redis:6379/0
       ALLOWED_ORIGINS: '["http://localhost:8081","http://127.0.0.1:8081"]'
       AUTH_COOKIE_SECURE: "false"
     ports:
       - "8000:8000"
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -49,7 +45,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: http://localhost:8000
+        VITE_API_URL: /
     ports:
       - "8081:80"
     depends_on:

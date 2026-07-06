@@ -46,8 +46,7 @@ async def monitor_portfolio(portfolio_id: UUID, db: AsyncSession, fetcher: DataF
         asset_rows = [dict(row) for row in asset_result.mappings().all()]
 
     asset_map = {row["ticker"]: row for row in asset_rows}
-    usd_inr_rate = await fetcher.get_usd_inr_rate()
-    current_asset_values = await _fetch_asset_values(holding_rows, asset_map, fetcher, usd_inr_rate)
+    current_asset_values = await _fetch_asset_values(holding_rows, asset_map, fetcher)
     if not current_asset_values:
         return None
 
@@ -137,38 +136,73 @@ async def _fetch_asset_values(
     holding_rows: list[dict],
     asset_map: dict[str, dict],
     fetcher: DataFetcher,
-    usd_inr_rate: float,
 ) -> list[AssetValue]:
-    price_tasks = []
-    task_meta: list[tuple[dict, dict]] = []
+    instruments: list[dict] = []
+    holding_by_ticker: dict[str, dict] = {}
     for row in holding_rows:
         ticker = row["ticker"]
         asset_row = asset_map.get(ticker)
         if asset_row is None:
             continue
-        price_tasks.append(fetcher.get_price_history(ticker, asset_row["data_source"], days=5))
-        task_meta.append((row, asset_row))
+        instruments.append(
+            {
+                "ticker": ticker,
+                "source": asset_row["data_source"],
+                "exchange": asset_row.get("exchange"),
+                "currency": asset_row["currency"],
+            }
+        )
+        holding_by_ticker[ticker] = row
 
-    if not price_tasks:
+    if not instruments:
         return []
 
-    price_frames = await asyncio.gather(*price_tasks)
+    if hasattr(fetcher, "get_latest_prices_in_inr"):
+        latest_prices = await fetcher.get_latest_prices_in_inr(instruments)
+    else:
+        latest_prices = {}
+
     values: list[AssetValue] = []
-    for (holding, asset_row), frame in zip(task_meta, price_frames):
-        ticker = holding["ticker"]
-        if frame.empty:
+    missing_instruments: list[dict] = []
+    for item in instruments:
+        ticker = item["ticker"]
+        latest_price_inr = latest_prices.get(ticker)
+        if latest_price_inr is None:
+            missing_instruments.append(item)
             continue
-        latest_price = float(frame["close"].iloc[-1])
+        holding = holding_by_ticker[ticker]
         quantity = float(holding["quantity"])
-        currency = asset_row["currency"].upper()
-        current_value_inr = latest_price * quantity * (usd_inr_rate if currency != "INR" else 1.0)
         values.append(
             AssetValue(
                 ticker=ticker,
-                asset_class=asset_row["asset_class"].value,
-                current_value_inr=float(current_value_inr),
+                asset_class=asset_map[ticker]["asset_class"].value,
+                current_value_inr=float(latest_price_inr * quantity),
             )
         )
+
+    if missing_instruments:
+        usd_inr_rate = await fetcher.get_usd_inr_rate()
+        price_frames = await asyncio.gather(
+            *[
+                fetcher.get_price_history(item["ticker"], item["source"], days=5)
+                for item in missing_instruments
+            ]
+        )
+        for item, frame in zip(missing_instruments, price_frames):
+            ticker = item["ticker"]
+            if frame.empty:
+                continue
+            latest_price = float(frame["close"].iloc[-1])
+            quantity = float(holding_by_ticker[ticker]["quantity"])
+            currency = item["currency"].upper()
+            current_value_inr = latest_price * quantity * (usd_inr_rate if currency != "INR" else 1.0)
+            values.append(
+                AssetValue(
+                    ticker=ticker,
+                    asset_class=asset_map[ticker]["asset_class"].value,
+                    current_value_inr=float(current_value_inr),
+                )
+            )
 
     return values
 

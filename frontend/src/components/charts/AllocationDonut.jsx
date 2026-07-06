@@ -1,10 +1,12 @@
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 
 const COLORS = {
+  stock: "#2563EB",
   stocks: "#2563EB",
   crypto: "#0891b2",
   gold: "#d97706",
   mf_etf: "#7c3aed",
+  bond: "#16a34a",
   bonds: "#16a34a",
 };
 
@@ -40,10 +42,10 @@ export default function AllocationDonut({ data = [] }) {
       <div className="mt-4 space-y-2">
         {data.map((d) => (
           <div key={d.key} className="grid grid-cols-[12px_minmax(0,1fr)_1fr_auto] items-center gap-3 text-xs">
-            <span className="w-3 h-3 rounded-sm" style={{ background: COLORS[d.key] }} />
+            <span className="w-3 h-3 rounded-sm" style={{ background: COLORS[d.key] || "#64748b" }} />
             <span className="font-sans font-medium text-gray-900 truncate">{d.name}</span>
             <span className="h-1.5 bg-black/[0.06] rounded-full overflow-hidden">
-              <span className="block h-full rounded-full" style={{ width: `${(d.value / max) * 100}%`, background: COLORS[d.key] }} />
+              <span className="block h-full rounded-full" style={{ width: `${(d.value / max) * 100}%`, background: COLORS[d.key] || "#64748b" }} />
             </span>
             <span className="font-mono text-gray-500 text-right">{d.value.toFixed(1)}%</span>
           </div>

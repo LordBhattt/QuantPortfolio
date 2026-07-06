@@ -4,35 +4,37 @@ from __future__ import annotations
 def build_recommended_portfolio(risk_score: int, investment_amount: float) -> list[dict[str, float | str]]:
     if risk_score <= 3:
         allocations = [
-            ("LIQUIDBEES.NS", "bond", 0.50),
-            ("NIFTYBEES.NS", "stock", 0.15),
-            ("HDFCBANK.NS", "stock", 0.15),
+            ("LIQUIDBEES.NS", "bond", 0.45),
+            ("NIFTYBEES.NS", "mf_etf", 0.20),
             ("GOLDBEES.NS", "gold", 0.15),
-            ("BTC", "crypto", 0.05),
+            ("HDFCBANK.NS", "stock", 0.10),
+            ("RELIANCE.NS", "stock", 0.08),
+            ("BTC", "crypto", 0.02),
         ]
     elif risk_score <= 6:
         allocations = [
             ("LIQUIDBEES.NS", "bond", 0.30),
+            ("NIFTYBEES.NS", "mf_etf", 0.20),
             ("RELIANCE.NS", "stock", 0.10),
             ("TCS.NS", "stock", 0.10),
             ("INFY.NS", "stock", 0.10),
-            ("NIFTYBEES.NS", "stock", 0.10),
-            ("GOLDBEES.NS", "gold", 0.15),
-            ("BTC", "crypto", 0.075),
-            ("ETH", "crypto", 0.075),
+            ("GOLDBEES.NS", "gold", 0.10),
+            ("BTC", "crypto", 0.05),
+            ("ETH", "crypto", 0.05),
         ]
     else:
         allocations = [
-            ("LIQUIDBEES.NS", "bond", 0.10),
-            ("RELIANCE.NS", "stock", 0.10),
-            ("TCS.NS", "stock", 0.10),
-            ("INFY.NS", "stock", 0.10),
-            ("HDFCBANK.NS", "stock", 0.10),
-            ("WIPRO.NS", "stock", 0.10),
+            ("LIQUIDBEES.NS", "bond", 0.15),
+            ("NIFTYBEES.NS", "mf_etf", 0.15),
+            ("RELIANCE.NS", "stock", 0.14),
+            ("TCS.NS", "stock", 0.12),
+            ("INFY.NS", "stock", 0.11),
+            ("HDFCBANK.NS", "stock", 0.05),
+            ("WIPRO.NS", "stock", 0.03),
             ("GOLDBEES.NS", "gold", 0.10),
-            ("BTC", "crypto", 0.18),
-            ("ETH", "crypto", 0.09),
-            ("BNB", "crypto", 0.03),
+            ("BTC", "crypto", 0.08),
+            ("ETH", "crypto", 0.05),
+            ("BNB", "crypto", 0.02),
         ]
 
     return [

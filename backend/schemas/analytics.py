@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
@@ -46,7 +47,10 @@ class PerformanceAttribution(BaseModel):
 
 class PortfolioAnalytics(BaseModel):
     portfolio_id: uuid.UUID
+    as_of: datetime | None = None
     usd_inr_rate: float
+    total_invested_usd: float = 0.0
+    total_invested_inr: float = 0.0
     total_value_usd: float
     total_value_inr: float
     day_pnl_usd: float

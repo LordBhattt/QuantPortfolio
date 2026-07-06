@@ -62,7 +62,10 @@ async def lifespan(app: FastAPI):
     forecaster = ReturnForecaster()
 
     try:
-        spy_frame = await fetcher.get_price_history("SPY", "yahoo", days=365)
+        spy_frame = await asyncio.wait_for(
+            fetcher.get_price_history("SPY", "yahoo", days=365),
+            timeout=30,
+        )
         spy_returns = spy_frame["close"].pct_change().dropna()
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, regime_detector.fit, spy_returns)
@@ -72,9 +75,9 @@ async def lifespan(app: FastAPI):
 
     try:
         forecaster.load()
-        logger.info("LSTM forecaster loaded")
+        logger.info("return forecaster loaded")
     except Exception as exc:
-        logger.warning("LSTM forecaster unavailable: %s", exc)
+        logger.warning("return forecaster unavailable: %s", exc)
 
     init_ml_models(regime_detector, forecaster)
     scheduler = create_scheduler(regime_detector, fetcher)

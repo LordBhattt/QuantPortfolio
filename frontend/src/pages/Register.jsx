@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 
 import { register } from '../api/auth'
+import { getApiErrorMessage } from '../api/client'
 import { usePortfolioStore } from '../store/portfolioStore'
 
 export default function Register() {
@@ -11,20 +13,22 @@ export default function Register() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
     try {
-      await register({
-        email,
+      const user = await register({
+        email: email.trim(),
         password,
         full_name: fullName || null,
       })
-      navigate(usePortfolioStore.getState().onboarded ? '/dashboard' : '/onboarding')
+      queryClient.setQueryData(['current-user'], user)
+      navigate(usePortfolioStore.getState().onboarded ? '/dashboard' : '/onboarding', { replace: true })
     } catch (err) {
-      setError(err.response?.data?.detail || 'Registration failed')
+      setError(getApiErrorMessage(err, 'Registration failed'))
     } finally {
       setLoading(false)
     }

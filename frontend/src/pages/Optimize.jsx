@@ -17,11 +17,11 @@ export default function Optimize() {
   const portfolioId = usePortfolioStore((s) => s.portfolioId);
   const [riskTolerance, setRiskTolerance] = useState(0.5);
   const [constraints, setConstraints] = useState({
-    stocks: { min: 0, max: 100 },
-    crypto: { min: 0, max: 40 },
-    gold: { min: 5, max: 30 },
-    mf_etf: { min: 0, max: 60 },
-    bonds: { min: 0, max: 40 },
+    stocks: { min: 10, max: 50 },
+    crypto: { min: 0, max: 10 },
+    gold: { min: 5, max: 20 },
+    mf_etf: { min: 5, max: 30 },
+    bonds: { min: 10, max: 40 },
   });
   const [userViews, setUserViews] = useState([]);
   const [useLstm, setUseLstm] = useState(true);

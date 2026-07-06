@@ -72,6 +72,29 @@ export function RiskSnapshotCard({ sharpe, maxDD, beta, regime }) {
   );
 }
 
+export function ProbabilityCard({ profit, loss, horizon }) {
+  return (
+    <div className="rounded-2xl border border-black/[0.06] bg-gradient-to-br from-white to-gray-50 p-5">
+      <div className="text-[11px] font-sans font-semibold tracking-[0.14em] uppercase text-gray-400">Monte Carlo Outlook</div>
+      <div className="mt-4 grid grid-cols-2 gap-4">
+        <div>
+          <div className="text-[10px] font-sans font-semibold tracking-[0.14em] uppercase text-emerald-600">Probability of Profit</div>
+          <div className="mt-1 font-mono text-2xl font-bold text-emerald-600">{profit.toFixed(1)}%</div>
+        </div>
+        <div className="text-right">
+          <div className="text-[10px] font-sans font-semibold tracking-[0.14em] uppercase text-rose-600">Probability of Loss</div>
+          <div className="mt-1 font-mono text-2xl font-bold text-rose-600">{loss.toFixed(1)}%</div>
+        </div>
+      </div>
+      <div className="mt-3 text-xs font-mono text-gray-500">over a {horizon} horizon vs today&apos;s value</div>
+      <div className="mt-4 h-2 rounded-full bg-gray-100 overflow-hidden flex">
+        <div className="bg-emerald-500" style={{ width: `${profit}%` }} />
+        <div className="bg-rose-500" style={{ width: `${loss}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function Metric({ label, value }) {
   return (
     <div className="flex items-baseline justify-between gap-4">

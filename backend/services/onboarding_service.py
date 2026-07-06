@@ -9,10 +9,13 @@ from backend.dependencies import get_fetcher
 from backend.errors import AppError
 from backend.models.asset import assets
 from backend.models.investor_profile import investor_profiles
+from backend.models.portfolio import constraints_for_risk_score
 from backend.schemas.onboarding import InvestorProfileCreate, InvestorProfileOut, PortfolioRecommendation
+from backend.schemas.optimization import PortfolioConstraints
 from backend.schemas.portfolio import PortfolioCreate
 from backend.services.portfolio_builder import build_recommended_portfolio
-from backend.services.portfolio_service import create_portfolio, list_portfolios
+from backend.services.portfolio_service import create_portfolio, list_portfolios, update_portfolio
+from backend.schemas.portfolio import PortfolioUpdate
 
 
 BASE_RISK_SCORES: dict[str, dict[str, int]] = {
@@ -66,10 +69,26 @@ async def upsert_investor_profile(payload: InvestorProfileCreate, user_id: UUID,
 
 async def recommend_portfolio(user_id: UUID, db: AsyncSession) -> list[PortfolioRecommendation]:
     profile = await get_investor_profile(user_id, db)
+    risk_constraints = constraints_for_risk_score(profile.risk_score)
+    portfolio_constraints = PortfolioConstraints(**risk_constraints)
+
     portfolios = await list_portfolios(user_id, db)
     if not portfolios:
         await create_portfolio(
-            PortfolioCreate(name="My Recommended Portfolio", description="Auto-created from investor profile"),
+            PortfolioCreate(
+                name="My Recommended Portfolio",
+                description="Auto-created from investor profile",
+                constraints=portfolio_constraints,
+            ),
+            user_id,
+            db,
+        )
+    else:
+        # Update existing portfolio constraints to match the new risk profile
+        target = portfolios[0]
+        await update_portfolio(
+            PortfolioUpdate(constraints=portfolio_constraints),
+            target.id,
             user_id,
             db,
         )
