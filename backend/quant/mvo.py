@@ -16,6 +16,7 @@ def constrained_mvo(
     constraints: Optional[PortfolioConstraints],
     risk_tolerance: float,
     risk_free_rate: float = 0.065,
+    max_single_asset_weight: float = 0.25,
 ) -> dict[str, float]:
     del risk_free_rate
     n_assets = len(tickers)
@@ -27,6 +28,11 @@ def constrained_mvo(
     portfolio_variance = cp.quad_form(weights, cov)
     objective = cp.Maximize(risk_tolerance * portfolio_return - (1.0 - risk_tolerance) * portfolio_variance)
     constraints_list = [cp.sum(weights) == 1, weights >= 0]
+
+    # Per-asset cap to prevent concentration
+    cap = min(max_single_asset_weight, 1.0)
+    if n_assets > 1:
+        constraints_list.append(weights <= cap)
 
     if constraints is not None:
         constraints_list.extend(_build_class_constraints(weights, asset_classes, constraints))

@@ -1,4 +1,9 @@
-"""Return computation and FX normalization helpers."""
+"""Return computation and FX normalization helpers.
+
+All return functions produce *log returns* (continuous compounding).
+For reporting, use the annualisation helpers to convert to arithmetic
+or geometric annual returns correctly.
+"""
 
 from typing import Dict
 
@@ -36,7 +41,19 @@ def align_returns(
 
 
 def annualise_returns(daily_returns: pd.Series, trading_days: int = 252) -> float:
-    return float(daily_returns.mean() * trading_days)
+    """Annualised *arithmetic* return from daily log returns.
+
+    Uses the Jensen's inequality correction:
+        R_arith = mu_log * T + 0.5 * var_log * T
+    """
+    mu_log = float(daily_returns.mean())
+    var_log = float(daily_returns.var())
+    return mu_log * trading_days + 0.5 * var_log * trading_days
+
+
+def annualise_geometric_return(daily_returns: pd.Series, trading_days: int = 252) -> float:
+    """Annualised *geometric* (CAGR) return from daily log returns."""
+    return float(np.exp(daily_returns.mean() * trading_days) - 1.0)
 
 
 def annualise_volatility(daily_returns: pd.Series, trading_days: int = 252) -> float:

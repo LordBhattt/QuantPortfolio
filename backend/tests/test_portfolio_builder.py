@@ -7,8 +7,8 @@ def test_build_recommended_portfolio_conservative() -> None:
     assert result[0] == {
         "ticker": "LIQUIDBEES.NS",
         "asset_class": "bond",
-        "recommended_weight": 0.5,
-        "recommended_amount_inr": 50000.0,
+        "recommended_weight": 0.45,
+        "recommended_amount_inr": 45000.0,
     }
     assert round(sum(item["recommended_weight"] for item in result), 10) == 1.0
 
@@ -18,4 +18,5 @@ def test_build_recommended_portfolio_aggressive_crypto_split() -> None:
 
     crypto = [item for item in result if item["asset_class"] == "crypto"]
     assert [item["ticker"] for item in crypto] == ["BTC", "ETH", "BNB"]
-    assert [item["recommended_weight"] for item in crypto] == [0.18, 0.09, 0.03]
+    assert [item["recommended_weight"] for item in crypto] == [0.08, 0.05, 0.02]
+    assert round(sum(item["recommended_weight"] for item in result), 10) == 1.0

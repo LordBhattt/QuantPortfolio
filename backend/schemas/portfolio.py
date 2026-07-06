@@ -41,7 +41,7 @@ class HoldingCreate(BaseModel):
     ticker: str
     quantity: float = Field(gt=0)
     avg_buy_price: float = Field(gt=0)
-    buy_currency: str = "USD"
+    buy_currency: str = "INR"
 
     @field_validator("ticker")
     @classmethod

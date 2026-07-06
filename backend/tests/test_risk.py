@@ -30,3 +30,20 @@ def test_monte_carlo_returns_expected_shape() -> None:
     assert result["horizon_days"] == 20
     assert len(result["percentiles"]["p50"]) == 20
     assert result["initial_value"] == 1000.0
+
+
+def test_monte_carlo_is_deterministic_for_same_inputs() -> None:
+    kwargs = dict(
+        weights=np.array([0.6, 0.4]),
+        mu=np.array([0.0005, 0.0002]),
+        cov=np.array([[0.0001, 0.0], [0.0, 0.00005]]),
+        initial_value=1000.0,
+        n_paths=100,
+        horizon_days=20,
+    )
+    first = simulate_portfolio(**kwargs)
+    second = simulate_portfolio(**kwargs)
+
+    assert first["prob_loss"] == second["prob_loss"]
+    assert first["expected_terminal_value"] == second["expected_terminal_value"]
+    assert first["percentiles"]["p50"] == second["percentiles"]["p50"]

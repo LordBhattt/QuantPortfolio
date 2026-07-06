@@ -27,6 +27,14 @@ COINGECKO_ID_MAP = {
     "MATIC": "matic-network",
 }
 
+YAHOO_CRYPTO_TICKER_MAP = {
+    "BTC": "BTC-USD",
+    "ETH": "ETH-USD",
+    "SOL": "SOL-USD",
+    "DOGE": "DOGE-USD",
+    "MATIC": "MATIC-USD",
+}
+
 
 class DataFetcher:
     def __init__(self, cache: RedisCache) -> None:
@@ -67,13 +75,16 @@ class DataFetcher:
         if source_name == "yahoo":
             frame = await self._fetch_yahoo(ticker, days)
         elif source_name == "coingecko":
-            frame = await self._fetch_coingecko(ticker, days)
+            try:
+                frame = await self._fetch_coingecko(ticker, days)
+            except Exception:
+                frame = await self._fetch_yahoo_crypto_fallback(ticker, days)
         elif source_name == "amfi":
             frame = await self._fetch_amfi_nav(ticker, days)
         else:
             raise ValueError(f"Unknown source: {source}")
 
-        await self.cache.set(cache_key, frame.to_json(date_format="iso"), ttl=3600)
+        await self.cache.set(cache_key, frame.to_json(date_format="iso"), ttl=settings.PRICE_HISTORY_TTL_SECONDS)
         return frame
 
     async def _fetch_yahoo(self, ticker: str, days: int) -> pd.DataFrame:
@@ -109,6 +120,10 @@ class DataFetcher:
         frame["low"] = frame["low"].fillna(frame["close"])
         frame["volume"] = frame["volume"].fillna(0.0)
         return frame.astype(float)
+
+    async def _fetch_yahoo_crypto_fallback(self, ticker: str, days: int) -> pd.DataFrame:
+        yahoo_ticker = YAHOO_CRYPTO_TICKER_MAP.get(ticker.upper(), f"{ticker.upper()}-USD")
+        return await self._fetch_yahoo(yahoo_ticker, days)
 
     async def _fetch_coingecko(self, ticker: str, days: int) -> pd.DataFrame:
         coin_id = COINGECKO_ID_MAP.get(ticker.upper(), ticker.lower())
@@ -153,8 +168,32 @@ class DataFetcher:
         except Exception:
             return None
 
-        await self.cache.set(cache_key, str(price), ttl=300)
+        await self.cache.set(cache_key, str(price), ttl=settings.LIVE_QUOTE_TTL_SECONDS)
         return price
+
+    async def _fetch_yahoo_quote_prices(self, tickers: list[str]) -> dict[str, float]:
+        if not tickers:
+            return {}
+
+        quote_base = settings.YAHOO_BASE.replace("/v8/finance", "/v7/finance")
+        url = f"{quote_base}/quote"
+        prices: dict[str, float] = {}
+        for start in range(0, len(tickers), 50):
+            chunk = tickers[start : start + 50]
+            data = await self._get_json(url, params={"symbols": ",".join(chunk)})
+            results = data.get("quoteResponse", {}).get("result", [])
+            for item in results:
+                symbol = str(item.get("symbol", "")).upper()
+                price = item.get("regularMarketPrice")
+                if price is None:
+                    price = item.get("postMarketPrice") or item.get("preMarketPrice")
+                try:
+                    parsed = float(price)
+                except (TypeError, ValueError):
+                    continue
+                if parsed > 0:
+                    prices[symbol] = parsed
+        return prices
 
     async def _fetch_usd_inr_rate(self) -> float:
         try:
@@ -222,6 +261,92 @@ class DataFetcher:
             except Exception:
                 return None
         return price
+
+    async def get_latest_prices_in_inr(self, instruments: list[dict]) -> dict[str, float]:
+        """
+        Return fresh INR quotes for multiple holdings while keeping external calls bounded.
+
+        Yahoo symbols are fetched through one batched quote request per 50 tickers, then
+        cached per instrument. Slower/history-backed sources still use their existing
+        per-source cache paths.
+        """
+        if not instruments:
+            return {}
+
+        prices: dict[str, float] = {}
+        pending_yahoo: list[dict] = []
+        pending_other: list[dict] = []
+
+        for item in instruments:
+            ticker = str(item["ticker"]).upper()
+            source = str(item.get("source") or item.get("data_source") or "yahoo").lower()
+            exchange = str(item.get("exchange") or "").upper()
+            currency = str(item.get("currency") or "INR").upper()
+            cache_key = f"quote_inr:{source}:{ticker}:{exchange}:{currency}"
+            cached = await self.cache.get(cache_key)
+            if cached is not None:
+                with contextlib.suppress(ValueError):
+                    prices[ticker] = float(cached)
+                    continue
+
+            normalized = {
+                "ticker": ticker,
+                "source": source,
+                "exchange": exchange,
+                "currency": currency,
+                "cache_key": cache_key,
+            }
+            if source == "yahoo":
+                pending_yahoo.append(normalized)
+            else:
+                pending_other.append(normalized)
+
+        usd_inr_rate: float | None = None
+        if any(item["currency"] == "USD" for item in pending_yahoo):
+            with contextlib.suppress(Exception):
+                usd_inr_rate = await self.get_usd_inr_rate()
+
+        if pending_yahoo:
+            try:
+                yahoo_prices = await self._fetch_yahoo_quote_prices([item["ticker"] for item in pending_yahoo])
+            except Exception:
+                yahoo_prices = {}
+
+            for item in pending_yahoo:
+                ticker = item["ticker"]
+                native_price = yahoo_prices.get(ticker)
+                if native_price is None and (item["exchange"] == "NSE" or ticker.endswith(".NS")):
+                    native_price = await self._fetch_nse_last_price(ticker)
+                if native_price is None:
+                    fallback = await self.get_latest_price_in_inr(
+                        ticker,
+                        item["source"],
+                        item["exchange"],
+                        item["currency"],
+                    )
+                    if fallback is not None:
+                        prices[ticker] = fallback
+                    continue
+
+                if item["currency"] == "USD" and usd_inr_rate is None:
+                    continue
+                price_inr = native_price * (usd_inr_rate if item["currency"] == "USD" else 1.0)
+                prices[ticker] = float(price_inr)
+                await self.cache.set(item["cache_key"], str(float(price_inr)), ttl=settings.LIVE_QUOTE_TTL_SECONDS)
+
+        if pending_other:
+            tasks = [
+                self.get_latest_price_in_inr(item["ticker"], item["source"], item["exchange"], item["currency"])
+                for item in pending_other
+            ]
+            resolved = await asyncio.gather(*tasks, return_exceptions=True)
+            for item, value in zip(pending_other, resolved):
+                if isinstance(value, Exception) or value is None:
+                    continue
+                prices[item["ticker"]] = float(value)
+                await self.cache.set(item["cache_key"], str(float(value)), ttl=settings.LIVE_QUOTE_TTL_SECONDS)
+
+        return prices
 
     async def get_fama_french_factors(self) -> pd.DataFrame:
         cache_key = "ff5:factors"

@@ -2,7 +2,7 @@
 
 QuantPortfolio is a full-stack portfolio analysis app for tracking holdings, exploring risk, and generating allocation suggestions with a quant-heavy backend. It combines portfolio CRUD, live market data, optimization, risk analytics, Monte Carlo simulation, and factor analysis behind a FastAPI API, then presents the results in a React dashboard.
 
-In plain language: you tell the app what you own, it fetches market history, converts everything into one comparable return series, and then helps answer questions like:
+In plain language: you tell the app what you own, it fetches market history, converts everything into one comparable return series, and then helps answer questions   like:
 
 - What is my portfolio worth today?
 - How much risk am I taking?

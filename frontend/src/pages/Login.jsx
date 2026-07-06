@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 
 import { login } from '../api/auth'
+import { getApiErrorMessage } from '../api/client'
+import { usePortfolioStore } from '../store/portfolioStore'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -9,16 +12,18 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
     try {
-      await login({ email, password })
-      navigate('/dashboard')
+      const user = await login({ email: email.trim(), password })
+      queryClient.setQueryData(['current-user'], user)
+      navigate(usePortfolioStore.getState().onboarded ? '/dashboard' : '/onboarding', { replace: true })
     } catch (err) {
-      setError(err.response?.data?.detail || 'Login failed')
+      setError(getApiErrorMessage(err, 'Login failed'))
     } finally {
       setLoading(false)
     }

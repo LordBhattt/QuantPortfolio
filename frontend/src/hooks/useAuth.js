@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { getCurrentUser } from '../api/auth'
+import { getApiErrorMessage } from '../api/client'
 
 function getErrorMessage(error, fallback) {
-  return error?.response?.data?.detail || error?.message || fallback
+  return getApiErrorMessage(error, fallback)
 }
 
 export function useCurrentUser() {
@@ -16,7 +17,7 @@ export function useCurrentUser() {
 
   return {
     data: query.data ?? null,
-    loading: query.isLoading || query.isFetching,
+    loading: query.isLoading,
     error: getErrorMessage(query.error, null),
     refetch: query.refetch,
   }

@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 from uuid import UUID
 
 import numpy as np
@@ -31,10 +32,15 @@ async def get_factor_exposure(
     quantities = {row["ticker"]: float(row["quantity"]) for row in holdings}
     asset_currencies = {ticker: asset_map[ticker]["currency"] for ticker in tickers}
 
-    price_frames = await asyncio.gather(
-        *[fetcher.get_price_history(ticker, asset_map[ticker]["data_source"], days=365 * 2) for ticker in tickers]
+    price_results = await asyncio.gather(
+        *[fetcher.get_price_history(ticker, asset_map[ticker]["data_source"], days=365 * 2) for ticker in tickers],
+        return_exceptions=True,
     )
-    price_data = dict(zip(tickers, price_frames))
+    price_data = {
+        ticker: frame
+        for ticker, frame in zip(tickers, price_results)
+        if not isinstance(frame, Exception) and not frame.empty
+    }
     usd_inr = await fetcher.get_usd_inr_rate()
     returns_df = await loop.run_in_executor(None, align_returns, price_data, asset_currencies, "USD", usd_inr)
     if returns_df.empty:
@@ -76,11 +82,31 @@ async def get_portfolio_analytics(
     buy_currencies = {row["ticker"]: row["buy_currency"] for row in holdings}
     asset_currencies = {ticker: asset_map[ticker]["currency"] for ticker in tickers}
 
-    price_frames = await asyncio.gather(
-        *[fetcher.get_price_history(ticker, asset_map[ticker]["data_source"], days=365) for ticker in tickers]
+    price_results = await asyncio.gather(
+        *[fetcher.get_price_history(ticker, asset_map[ticker]["data_source"], days=365) for ticker in tickers],
+        return_exceptions=True,
     )
-    price_data = dict(zip(tickers, price_frames))
+    price_data = {
+        ticker: frame
+        for ticker, frame in zip(tickers, price_results)
+        if not isinstance(frame, Exception) and not frame.empty
+    }
     usd_inr = await fetcher.get_usd_inr_rate()
+    live_prices_inr = (
+        await fetcher.get_latest_prices_in_inr(
+            [
+                {
+                    "ticker": ticker,
+                    "source": asset_map[ticker]["data_source"],
+                    "exchange": asset_map[ticker].get("exchange"),
+                    "currency": asset_currencies[ticker],
+                }
+                for ticker in tickers
+            ]
+        )
+        if hasattr(fetcher, "get_latest_prices_in_inr")
+        else {}
+    )
     returns_df = await loop.run_in_executor(None, align_returns, price_data, asset_currencies, "USD", usd_inr)
 
     current_values: dict[str, float] = {}
@@ -92,19 +118,40 @@ async def get_portfolio_analytics(
     price_series_inr: dict[str, pd.Series] = {}
 
     for ticker in tickers:
-        frame = price_data[ticker]
-        latest_price = float(frame["close"].iloc[-1])
-        previous_close = float(frame["close"].iloc[-2]) if len(frame) > 1 else latest_price
         quantity = quantities[ticker]
         native_multiplier = 1.0 / usd_inr if asset_currencies[ticker].upper() == "INR" else 1.0
         buy_multiplier = 1.0 / usd_inr if buy_currencies[ticker].upper() == "INR" else 1.0
         price_multiplier_inr = 1.0 if asset_currencies[ticker].upper() == "INR" else usd_inr
+        live_price_inr = live_prices_inr.get(ticker)
+        frame = price_data.get(ticker)
+        if frame is None or frame.empty:
+            if live_price_inr is None:
+                continue
+            historical_latest_price = live_price_inr / price_multiplier_inr
+        else:
+            historical_latest_price = float(frame["close"].iloc[-1])
+        latest_price = (
+            live_price_inr / price_multiplier_inr
+            if live_price_inr is not None and price_multiplier_inr > 0
+            else historical_latest_price
+        )
+        previous_close = (
+            historical_latest_price
+            if live_price_inr is not None
+            else float(frame["close"].iloc[-2]) if frame is not None and len(frame) > 1 else historical_latest_price
+        )
 
         current_value = latest_price * quantity * native_multiplier
         invested = avg_buy_prices[ticker] * quantity * buy_multiplier
         day_pnl = (latest_price - previous_close) * quantity * native_multiplier
         total_pnl = current_value - invested
-        price_series = frame["close"].astype(float) * price_multiplier_inr
+        if frame is None or frame.empty:
+            price_series = pd.Series([float(live_price_inr or latest_price * price_multiplier_inr)])
+        else:
+            price_series = frame["close"].astype(float) * price_multiplier_inr
+            if live_price_inr is not None and not price_series.empty:
+                price_series = price_series.copy()
+                price_series.iloc[-1] = float(live_price_inr)
         price_series_inr[ticker] = price_series
         sparkline_by_ticker[ticker] = [float(value) for value in price_series.tail(7).tolist()]
 
@@ -126,16 +173,17 @@ async def get_portfolio_analytics(
     total_pnl_usd = float(sum(total_pnl_by_ticker.values()))
     total_pnl_inr = float(total_pnl_usd * usd_inr)
     invested_usd = float(sum(cost_basis.values()))
+    invested_inr = float(invested_usd * usd_inr)
     previous_value_usd = total_value_usd - day_pnl_usd
     day_pnl_pct = float(day_pnl_usd / previous_value_usd) if previous_value_usd else 0.0
     total_pnl_pct = float(total_pnl_usd / invested_usd) if invested_usd else 0.0
     asset_class_allocation = {name: float(value / total_value_usd) for name, value in allocation_raw.items()}
 
-    common_tickers = [ticker for ticker in tickers if ticker in returns_df.columns]
+    common_tickers = [ticker for ticker in current_values if ticker in returns_df.columns]
     weights = np.array([current_values[ticker] / total_value_usd for ticker in common_tickers])
     portfolio_vol = 0.0
     risk_contributions = {ticker: 0.0 for ticker in tickers}
-    if common_tickers:
+    if common_tickers and len(returns_df[common_tickers]) >= 2:
         cov = await loop.run_in_executor(None, compute_covariance, returns_df[common_tickers], "ledoit_wolf", False, 252)
         portfolio_vol = float(np.sqrt(weights @ cov @ weights))
         if portfolio_vol > 0:
@@ -194,7 +242,7 @@ async def get_portfolio_analytics(
             contribution_to_return=float(total_pnl_by_ticker[ticker] / total_value_usd),
             contribution_to_risk=float(risk_contributions.get(ticker, 0.0)),
         )
-        for ticker in tickers
+        for ticker in current_values
     ], key=lambda item: item.current_value_inr or 0.0, reverse=True)
 
     factor_exposure = await _safe_factor_exposure(
@@ -206,7 +254,10 @@ async def get_portfolio_analytics(
 
     return PortfolioAnalytics(
         portfolio_id=portfolio_id,
+        as_of=datetime.now(timezone.utc),
         usd_inr_rate=float(usd_inr),
+        total_invested_usd=invested_usd,
+        total_invested_inr=invested_inr,
         total_value_usd=total_value_usd,
         total_value_inr=total_value_inr,
         day_pnl_usd=day_pnl_usd,

@@ -90,6 +90,7 @@ async def create_user(payload: UserCreate, db: AsyncSession) -> UserOut:
     )
     result = await db.execute(statement)
     created = result.mappings().one()
+    await db.commit()
     return UserOut.model_validate(created)
 
 

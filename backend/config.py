@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     )
 
     # DB
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/quantportfolio"
+    DATABASE_URL: str = "postgresql+asyncpg://quantportfolio:quantportfolio@localhost:5432/quantportfolio"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379"
@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     COINGECKO_BASE: str = "https://api.coingecko.com/api/v3"
     YAHOO_BASE: str = "https://query1.finance.yahoo.com/v8/finance"
     AMFI_NAV_URL: str = "https://www.amfiindia.com/spages/NAVAll.txt"
+    PRICE_HISTORY_TTL_SECONDS: int = 3600
+    LIVE_QUOTE_TTL_SECONDS: int = 60
 
     # ML
     LSTM_WEIGHTS_PATH: str = "ml/weights/lstm_latest.pt"

@@ -12,6 +12,9 @@ export function useRiskMetrics(portfolioId) {
     enabled: Boolean(portfolioId),
     queryFn: () => getRiskMetrics(portfolioId),
     staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   })
 
   return {
@@ -27,7 +30,8 @@ export function useMonteCarlo(portfolioId, nPaths = 1000, horizonDays = 252) {
     queryKey: ['monte-carlo', portfolioId, nPaths, horizonDays],
     enabled: Boolean(portfolioId),
     queryFn: () => getMonteCarlo(portfolioId, { n_paths: nPaths, horizon_days: horizonDays }),
-    staleTime: 30_000,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   })
 
   return {
