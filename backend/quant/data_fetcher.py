@@ -6,6 +6,7 @@ Methods return raw DataFrames or primitive payloads without business logic.
 import asyncio
 import contextlib
 import io
+import time
 import zipfile
 from datetime import datetime, timedelta, timezone
 from urllib.request import urlopen
@@ -27,11 +28,52 @@ COINGECKO_ID_MAP = {
     "MATIC": "matic-network",
 }
 
+# Minimum seconds between two outbound requests to the same provider. Defense
+# in depth on top of the existing Redis cache: keeps normal live usage (and
+# any burst of concurrent requests, e.g. a portfolio with many holdings) from
+# outrunning free-tier limits, most importantly CoinGecko's ~10-30 req/min.
+_MIN_INTERVAL_SECONDS: dict[str, float] = {
+    "yahoo": 0.3,
+    "coingecko": 2.0,
+    "amfi": 0.3,
+    "nse": 1.0,
+    "fx": 0.3,
+}
+
+
+class _SourceThrottle:
+    """Serializes and spaces out requests per data-provider `source` name."""
+
+    def __init__(self) -> None:
+        self._last_call_at: dict[str, float] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
+
+    def _lock_for(self, source: str) -> asyncio.Lock:
+        lock = self._locks.get(source)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[source] = lock
+        return lock
+
+    async def wait(self, source: str | None) -> None:
+        if not source:
+            return
+        min_interval = _MIN_INTERVAL_SECONDS.get(source, 0.0)
+        if min_interval <= 0:
+            return
+        async with self._lock_for(source):
+            elapsed = time.monotonic() - self._last_call_at.get(source, 0.0)
+            remaining = min_interval - elapsed
+            if remaining > 0:
+                await asyncio.sleep(remaining)
+            self._last_call_at[source] = time.monotonic()
+
 
 class DataFetcher:
     def __init__(self, cache: RedisCache) -> None:
         self.cache = cache
         self.client = httpx.AsyncClient(timeout=30.0, headers=self._browser_headers())
+        self._throttle = _SourceThrottle()
 
     @staticmethod
     def _browser_headers() -> dict[str, str]:
@@ -46,13 +88,19 @@ class DataFetcher:
         await self.client.aclose()
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-    async def _get_json(self, url: str, params: dict | None = None, headers: dict[str, str] | None = None) -> dict:
+    async def _get_json(
+        self, url: str, params: dict | None = None, headers: dict[str, str] | None = None, source: str | None = None
+    ) -> dict:
+        await self._throttle.wait(source)
         response = await self.client.get(url, params=params, headers=headers)
         response.raise_for_status()
         return response.json()
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-    async def _get_text(self, url: str, params: dict | None = None, headers: dict[str, str] | None = None) -> str:
+    async def _get_text(
+        self, url: str, params: dict | None = None, headers: dict[str, str] | None = None, source: str | None = None
+    ) -> str:
+        await self._throttle.wait(source)
         response = await self.client.get(url, params=params, headers=headers)
         response.raise_for_status()
         return response.text
@@ -88,7 +136,7 @@ class DataFetcher:
             "events": "history",
             "includeAdjustedClose": "true",
         }
-        data = await self._get_json(url, params=params)
+        data = await self._get_json(url, params=params, source="yahoo")
         result = data["chart"]["result"][0]
         quote = result["indicators"]["quote"][0]
         timestamps = result["timestamp"]
@@ -114,7 +162,7 @@ class DataFetcher:
         coin_id = COINGECKO_ID_MAP.get(ticker.upper(), ticker.lower())
         url = f"{settings.COINGECKO_BASE}/coins/{coin_id}/market_chart"
         params = {"vs_currency": "usd", "days": days, "interval": "daily"}
-        data = await self._get_json(url, params=params)
+        data = await self._get_json(url, params=params, source="coingecko")
         prices = data["prices"]
         volumes = {item[0]: item[1] for item in data.get("total_volumes", [])}
         frame = pd.DataFrame(prices, columns=["ts", "close"])
@@ -127,7 +175,7 @@ class DataFetcher:
 
     async def _fetch_amfi_nav(self, ticker: str, days: int) -> pd.DataFrame:
         url = f"https://api.mfapi.in/mf/{ticker}"
-        data = await self._get_json(url)
+        data = await self._get_json(url, source="amfi")
         records = list(reversed(data["data"][:days]))
         frame = pd.DataFrame(records)
         frame["date"] = pd.to_datetime(frame["date"], format="%d-%m-%Y")
@@ -148,7 +196,7 @@ class DataFetcher:
 
         url = f"https://www.nseindia.com/api/quote-equity?symbol={symbol}"
         try:
-            data = await self._get_json(url, headers=self._browser_headers())
+            data = await self._get_json(url, headers=self._browser_headers(), source="nse")
             price = float(data["priceInfo"]["lastPrice"])
         except Exception:
             return None
@@ -164,7 +212,7 @@ class DataFetcher:
             pass
 
         url = "https://open.er-api.com/v6/latest/USD"
-        data = await self._get_json(url, headers=self._browser_headers())
+        data = await self._get_json(url, headers=self._browser_headers(), source="fx")
         return float(data["rates"]["INR"])
 
     async def get_usd_inr_rate(self) -> float:
