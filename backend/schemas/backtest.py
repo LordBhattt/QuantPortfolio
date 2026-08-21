@@ -50,6 +50,23 @@ class BanditPosteriorEntry(BaseModel):
     n: int
 
 
+class TaxPolicyResult(BaseModel):
+    policy: str
+    equity_curve: list[EquityCurvePoint]
+    metrics: StrategyMetricsResponse
+    total_tax_paid: float
+    tax_by_asset_class: dict[str, float]
+
+
+class TaxAwareComparisonResponse(BaseModel):
+    strategy: str
+    starting_capital: float
+    policies: list[TaxPolicyResult]
+    naive_tax_drag_pct: float
+    tax_aware_savings_pct: float
+    tax_aware_recovery_pct: float
+
+
 class BacktestResponse(BaseModel):
     universe: list[str]
     lookback_days: int
@@ -59,3 +76,4 @@ class BacktestResponse(BaseModel):
     strategies: list[StrategySeriesResponse]
     significance_vs_baseline: list[SignificanceResponse]
     bandit_posterior: list[BanditPosteriorEntry]
+    tax_comparison: TaxAwareComparisonResponse | None = None
