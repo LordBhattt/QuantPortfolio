@@ -47,11 +47,6 @@ class Settings(BaseSettings):
     PRICE_HISTORY_TTL_SECONDS: int = 3600
     LIVE_QUOTE_TTL_SECONDS: int = 60
 
-    # ML
-    LSTM_WEIGHTS_PATH: str = "ml/weights/lstm_latest.pt"
-    LSTM_LOOKBACK_DAYS: int = 60
-    LSTM_FORECAST_DAYS: int = 30
-
     # Quant params
     RISK_FREE_RATE: float = 0.065
     MVO_ROLLING_WINDOW_DAYS: int = 252

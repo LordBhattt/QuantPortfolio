@@ -24,7 +24,7 @@ In plain language: you tell the app what you own, it fetches market history, con
   - constrained mean-variance optimization
   - efficient frontier generation
   - optional user views
-  - optional LSTM-based forecasts
+  - optional momentum-model-based forecasts
   - optional regime-aware covariance scaling
 - Backtest page with:
   - walk-forward, monthly-rebalanced comparison of equal-weight, static MVO, MVO+Ledoit-Wolf, the full BL+LW+HMM production pipeline, and an adaptive regime-conditioned strategy bandit
@@ -62,12 +62,12 @@ In plain language: you tell the app what you own, it fetches market history, con
 | Layer | Stack |
 | --- | --- |
 | Frontend | React 18, Vite 5, React Router 6, Tailwind CSS, shadcn/ui, Radix UI, Recharts, Zustand, Axios |
-| Frontend testing | Vitest, Testing Library, jsdom |
+| Frontend testing | Vitest, jsdom |
 | Backend API | FastAPI, Pydantic v2, Uvicorn |
 | Database | PostgreSQL with SQLAlchemy async engine and Alembic migrations |
 | Cache | Redis, with automatic in-memory fallback when Redis is unavailable |
 | Quant / math | NumPy, Pandas, SciPy, scikit-learn, CVXPY, hmmlearn, statsmodels |
-| ML | PyTorch |
+| ML | scikit-learn momentum forecaster (offline-trained, loaded read-only) |
 | Auth | python-jose, Passlib bcrypt |
 | Scheduling | APScheduler |
 | Reliability | httpx, tenacity retries |
@@ -96,8 +96,7 @@ backend/
   routers/                HTTP endpoints
   services/               Business logic
   quant/                  Optimization, risk, factors, regimes, forecasts, backtesting, data fetching
-  ml/                     LSTM model definition and offline trainer
-  models/                 SQLAlchemy table definitions
+  models/                 SQLAlchemy table definitions and the momentum forecaster's momentum_model.pkl
   schemas/                Pydantic request/response schemas
   scripts/                One-off maintenance scripts (e.g. build_backtest_dataset.py)
   tasks/scheduler.py      Periodic cache refresh and model-maintenance jobs
@@ -143,7 +142,7 @@ When the FastAPI app starts, `backend/main.py` does more than just boot the serv
 3. Connects to Redis. If Redis is unavailable, caching falls back to an in-memory store.
 4. Creates the shared `DataFetcher`.
 5. Tries to fit the market regime detector using roughly 3 years of `SPY` history.
-6. Tries to load LSTM weights from `LSTM_WEIGHTS_PATH`.
+6. Tries to load the momentum forecaster from `backend/models/momentum_model.pkl`.
 7. Registers those model singletons for the optimization service.
 8. Starts scheduled jobs for cache refreshes and model-maintenance reminders.
 
@@ -208,7 +207,7 @@ Plain English:
 - Black-Litterman starts with a calm "baseline belief" implied by the market and covariance.
 - Then it gently adjusts that baseline using:
   - user views such as "AAPL should return 8%"
-  - optional LSTM forecasts
+  - optional momentum-model forecasts
   - confidence values that say how strongly to trust those views
 
 Why it is useful:
@@ -245,25 +244,20 @@ Why it is useful:
 
 - It helps users understand the tradeoff between being safer and aiming higher.
 
-### 7. LSTM forecasts
+### 7. Momentum forecasts
 
-The LSTM model is an optional return forecaster loaded from saved weights.
+The momentum model is an optional return forecaster: a scikit-learn regressor trained offline and loaded from `backend/models/momentum_model.pkl`.
 
 Plain English:
 
-- It looks at recent OHLCV sequences:
-  - open
-  - high
-  - low
-  - close
-  - volume
-- It tries to predict future return behavior from those patterns.
+- It looks at recent weekly price momentum: mean and volatility of the last 4 and 8 weeks, how many of those weeks were positive, and the worst 4-week drop.
+- It predicts a forward return from that pattern, then blends it with the asset's own historical return and a long-term asset-class prior so the ML signal alone can never dominate the estimate.
+- The prediction is clipped to asset-class-specific bounds before it ever reaches Black-Litterman, so an extreme forecast can't destabilise the optimizer.
 
 Important reality check:
 
-- The app does not train this model live in production.
-- Training is an offline workflow in `backend/ml/trainer.py`.
-- If weights are missing, the rest of the optimization pipeline still works.
+- The app does not train this model live in production; it's loaded read-only from the committed `.pkl` file.
+- If the model file is missing, the rest of the optimization pipeline still works -- optimization simply continues without those forecast views.
 
 ### 8. Monte Carlo simulation
 
@@ -472,11 +466,6 @@ COINGECKO_BASE=https://api.coingecko.com/api/v3
 YAHOO_BASE=https://query1.finance.yahoo.com/v8/finance
 AMFI_NAV_URL=https://www.amfiindia.com/spages/NAVAll.txt
 
-# ML
-LSTM_WEIGHTS_PATH=ml/weights/lstm_latest.pt
-LSTM_LOOKBACK_DAYS=60
-LSTM_FORECAST_DAYS=30
-
 # Quant
 RISK_FREE_RATE=0.065
 MVO_ROLLING_WINDOW_DAYS=252
@@ -491,7 +480,6 @@ CVAR_CONFIDENCE=0.95
 - `DATABASE_URL`: async SQLAlchemy connection string
 - `REDIS_URL`: cache backend
 - `SECRET_KEY`: JWT signing secret
-- `LSTM_WEIGHTS_PATH`: where the app looks for trained LSTM weights
 - `RISK_FREE_RATE`: used in Sharpe-like calculations and optimizer scoring
 
 ### 3. Install backend dependencies
@@ -623,16 +611,12 @@ Once both apps are running:
 
 ## Scheduled Jobs
 
-`backend/tasks/scheduler.py` defines three recurring jobs:
+`backend/tasks/scheduler.py` defines two recurring jobs:
 
 - hourly cache invalidation for prices and FX
 - weekly refit of the regime detector on Sunday at 02:00
-- monthly LSTM retraining reminder log on day 1 at 03:00
 
-Important note:
-
-- the monthly LSTM job does not retrain automatically
-- it only logs that retraining should be run offline
+The momentum forecaster is not retrained on a schedule; it's a static, offline-trained model loaded once at startup.
 
 ## Asset Seeding
 
@@ -692,7 +676,7 @@ This section matters if you want to understand the repo as it really exists toda
 
 - CORS origins are currently hardcoded in `backend/main.py` for local dev hosts even though `ALLOWED_ORIGINS` exists in settings.
 - The regime detector is trained from `SPY` history and optimization currently uses the first aligned return series as the market proxy when predicting the live regime.
-- The LSTM forecaster is optional. Missing weights do not break the API; optimization simply continues without those forecast views.
+- The momentum forecaster is optional. A missing model file does not break the API; optimization simply continues without those forecast views.
 - Portfolio `base_currency` exists in the data model, but major calculations are normalized internally and many user-facing analytics are rendered in INR.
 - The onboarding asset-class picker influences the initial user experience, but the persisted portfolio creation step currently stores name, description, base currency, and risk-profile constraints rather than a hard investable-universe filter.
 - The frontend includes a React Query provider, but most current hooks are handwritten async hooks instead of React Query-powered caches.
