@@ -1,8 +1,10 @@
+import { useCountUp } from "../../hooks/useCountUp";
 import Sparkline from "../ui-qp/Sparkline";
 import EmptyState from "../ui-qp/EmptyState";
 import { formatINR } from "../../utils/format";
 
 export default function HeroBand({ totalValue, dayChange, dayChangePct, asOf, sparkData = [], empty, onAdd }) {
+  const animatedValue = useCountUp(totalValue ?? 0, 900);
   const positive = (dayChange ?? 0) >= 0;
   const borderColor = positive ? "border-l-primary" : "border-l-gray-400";
 
@@ -20,7 +22,7 @@ export default function HeroBand({ totalValue, dayChange, dayChangePct, asOf, sp
         <div className="flex-1 p-6 min-w-0">
           <div className="text-[11px] font-sans font-semibold tracking-[0.14em] uppercase text-gray-400">Portfolio Value</div>
           <div className="mt-2 text-5xl lg:text-6xl font-mono font-bold tracking-tight text-gray-900 truncate">
-            {formatINR(totalValue)}
+            {formatINR(animatedValue)}
           </div>
           <div className="mt-3">
             {positive ? (

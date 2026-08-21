@@ -1,3 +1,4 @@
+import { useCountUp } from "../../hooks/useCountUp";
 import Card from "../ui-qp/Card";
 import { formatINRCompact, formatINR } from "../../utils/format";
 import Badge from "../ui-qp/Badge";
@@ -7,7 +8,7 @@ export function InvestedVsCurrentCard({ invested, current }) {
   const ratio = Math.min(1.5, current / safeInvested);
   const pct = Math.min(150, ratio * 100);
   return (
-    <Card className="p-5">
+    <Card tilt className="p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-[11px] font-sans font-semibold tracking-[0.14em] uppercase text-gray-400">Invested</div>
@@ -33,8 +34,10 @@ export function InvestedVsCurrentCard({ invested, current }) {
 }
 
 export function TotalReturnCard({ returnPct, absoluteGain, xirr }) {
+  const animatedReturnPct = useCountUp(returnPct, 800);
+  const animatedGain = useCountUp(absoluteGain, 800);
   return (
-    <Card className="p-5 relative overflow-hidden">
+    <Card tilt className="p-5 relative overflow-hidden">
       {/* Watermark trend line */}
       <svg className="absolute inset-0 w-full h-full opacity-[0.06] pointer-events-none" viewBox="0 0 200 100" preserveAspectRatio="none">
         <path d="M0,85 L40,70 L80,60 L120,40 L160,25 L200,10" stroke="currentColor" strokeWidth="2" fill="none" />
@@ -42,10 +45,10 @@ export function TotalReturnCard({ returnPct, absoluteGain, xirr }) {
       <div className="relative">
         <div className="text-[11px] font-sans font-semibold tracking-[0.14em] uppercase text-gray-400">Total Return</div>
         <div className="mt-2 font-mono text-4xl font-bold tracking-tight text-gray-900">
-          {returnPct >= 0 ? "+" : ""}{returnPct.toFixed(1)}%
+          {animatedReturnPct >= 0 ? "+" : ""}{animatedReturnPct.toFixed(1)}%
         </div>
         <div className="mt-2 font-mono text-xs text-gray-500">
-          {absoluteGain >= 0 ? "+" : ""}{formatINR(absoluteGain)} absolute gain
+          {animatedGain >= 0 ? "+" : ""}{formatINR(animatedGain)} absolute gain
         </div>
         <div className="mt-3 font-mono text-xs text-gray-900">
           <span className="text-gray-400">XIRR</span>&nbsp;&nbsp;{xirr.toFixed(1)}% p.a.
@@ -57,7 +60,7 @@ export function TotalReturnCard({ returnPct, absoluteGain, xirr }) {
 
 export function RiskSnapshotCard({ sharpe, maxDD, beta, regime }) {
   return (
-    <Card className="p-5">
+    <Card tilt className="p-5">
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-2.5">
           <Metric label="SHARPE" value={sharpe.toFixed(2)} />

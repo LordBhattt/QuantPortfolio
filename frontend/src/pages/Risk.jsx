@@ -59,7 +59,7 @@ export default function Risk() {
                 {isLoading ? (
                   <SkeletonBlock className="h-28 w-full" />
                 ) : (
-                  <Card className="p-5">
+                  <Card tilt className="p-5">
                     <div className="text-[11px] font-sans font-semibold tracking-[0.14em] uppercase text-gray-400">{stat.label}</div>
                     <div className="mt-2 font-mono text-2xl font-bold text-gray-900">{stat.value}</div>
                     <div className="mt-1 text-xs font-mono text-gray-500">{stat.sub}</div>

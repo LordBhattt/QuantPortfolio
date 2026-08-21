@@ -262,17 +262,17 @@ export default function Backtest() {
               </div>
 
               <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <Card className="p-5">
+                <Card tilt className="p-5">
                   <div className="text-[11px] font-sans font-semibold uppercase tracking-[0.12em] text-gray-400">Naive Tax Drag</div>
                   <div className="mt-2 font-mono text-2xl font-bold text-red-600">-{taxComparison.naive_tax_drag_pct.toFixed(2)}%</div>
                   <div className="mt-1 text-xs font-mono text-gray-500">frictionless vs. naive FIFO rebalancing</div>
                 </Card>
-                <Card className="p-5">
+                <Card tilt className="p-5">
                   <div className="text-[11px] font-sans font-semibold uppercase tracking-[0.12em] text-gray-400">Tax-Aware Savings</div>
                   <div className="mt-2 font-mono text-2xl font-bold text-primary">+{taxComparison.tax_aware_savings_pct.toFixed(2)}%</div>
                   <div className="mt-1 text-xs font-mono text-gray-500">tax-aware lot selection vs. naive FIFO</div>
                 </Card>
-                <Card className="p-5">
+                <Card tilt className="p-5">
                   <div className="text-[11px] font-sans font-semibold uppercase tracking-[0.12em] text-gray-400">Drag Recovered</div>
                   <div className="mt-2 font-mono text-2xl font-bold text-gray-900">{taxComparison.tax_aware_recovery_pct.toFixed(0)}%</div>
                   <div className="mt-1 text-xs font-mono text-gray-500">of the naive drag, from lot choice alone</div>

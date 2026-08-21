@@ -97,12 +97,32 @@ export default {
           "0%": { transform: "translateX(100%)" },
           "100%": { transform: "translateX(0)" },
         },
+        "aurora-drift-1": {
+          "0%, 100%": { transform: "translate(0%, 0%) scale(1)" },
+          "50%": { transform: "translate(6%, 8%) scale(1.12)" },
+        },
+        "aurora-drift-2": {
+          "0%, 100%": { transform: "translate(0%, 0%) scale(1)" },
+          "50%": { transform: "translate(-8%, -4%) scale(1.08)" },
+        },
+        "aurora-drift-3": {
+          "0%, 100%": { transform: "translate(0%, 0%) scale(1)" },
+          "50%": { transform: "translate(4%, -10%) scale(1.15)" },
+        },
+        float: {
+          "0%, 100%": { transform: "translateY(0px)" },
+          "50%": { transform: "translateY(-10px)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         fadeUp: "fadeUp 0.4s ease forwards",
         "slide-in-right": "slide-in-right 0.3s ease-out",
+        "aurora-drift-1": "aurora-drift-1 18s ease-in-out infinite",
+        "aurora-drift-2": "aurora-drift-2 22s ease-in-out infinite",
+        "aurora-drift-3": "aurora-drift-3 26s ease-in-out infinite",
+        float: "float 6s ease-in-out infinite",
       },
     },
   },

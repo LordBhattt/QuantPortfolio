@@ -101,7 +101,7 @@ export default function Navbar() {
   };
 
   return (
-    <nav className="sticky top-0 z-40 h-14 bg-white/90 backdrop-blur-sm border-b border-black/[0.06] flex items-center px-6 gap-6">
+    <nav className="sticky top-0 z-40 h-14 bg-white/80 backdrop-blur-xl backdrop-saturate-150 border-b border-black/[0.06] shadow-[0_1px_0_0_rgba(0,0,0,0.02)] flex items-center px-6 gap-6">
       <div className="flex items-center gap-2">
         <div className="w-7 h-7 rounded-md bg-gray-900 flex items-center justify-center">
           <span className="text-white font-mono text-xs font-semibold">Q</span>
