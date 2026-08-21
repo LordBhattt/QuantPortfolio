@@ -25,7 +25,7 @@ from backend.quant.data_fetcher import DataFetcher
 from backend.quant.forecaster import ReturnForecaster
 from backend.quant.regime import RegimeDetector
 from backend.rate_limit import limiter
-from backend.routers import alerts, analytics, assets, auth, onboarding, optimization, portfolio, risk
+from backend.routers import alerts, analytics, assets, auth, backtest, onboarding, optimization, portfolio, risk
 from backend.schemas.common import HealthResponse
 from backend.services.asset_service import seed_default_assets
 from backend.services.optimization_service import init_ml_models
@@ -167,6 +167,7 @@ app.include_router(onboarding.router)
 app.include_router(optimization.router)
 app.include_router(risk.router)
 app.include_router(analytics.router)
+app.include_router(backtest.router)
 
 
 @app.get("/health", response_model=HealthResponse)
