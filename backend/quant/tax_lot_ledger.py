@@ -129,6 +129,7 @@ class PortfolioLedger:
         on_date: date,
         tracker: TaxYearTracker,
         policy: str,
+        apply_tax: bool = True,
     ) -> list[Disposal]:
         available = self.lots.get(ticker, [])
         if not available or quantity <= 0:
@@ -140,10 +141,14 @@ class PortfolioLedger:
         disposals: list[Disposal] = []
         for lot, take in chosen:
             gross_gain = (price - lot.cost_basis_price) * take
-            result = tracker.record_disposal(lot.asset_class, lot.acquired_on, on_date, gross_gain)
+            if apply_tax:
+                result = tracker.record_disposal(lot.asset_class, lot.acquired_on, on_date, gross_gain)
+                tax_owed = result.tax_owed
+            else:
+                tax_owed = 0.0
             proceeds = take * price
-            self.cash += proceeds - result.tax_owed
-            disposals.append(Disposal(ticker, take, proceeds, gross_gain, result.tax_owed))
+            self.cash += proceeds - tax_owed
+            disposals.append(Disposal(ticker, take, proceeds, gross_gain, tax_owed))
             lot.quantity -= take
 
         self.lots[ticker] = [lot for lot in available if lot.quantity > MIN_LOT_QUANTITY]
@@ -158,6 +163,7 @@ def rebalance_to_target(
     on_date: date,
     tracker: TaxYearTracker,
     policy: str,
+    apply_tax: bool = True,
 ) -> list[Disposal]:
     """Trade `ledger` from its current holdings toward `target_weights`,
     selling via `policy` ("fifo" or "tax_aware") and buying new lots at
@@ -186,7 +192,7 @@ def rebalance_to_target(
 
     all_disposals: list[Disposal] = []
     for ticker, quantity in sell_orders:
-        all_disposals.extend(ledger.sell(ticker, quantity, prices[ticker], on_date, tracker, policy))
+        all_disposals.extend(ledger.sell(ticker, quantity, prices[ticker], on_date, tracker, policy, apply_tax))
 
     for ticker, quantity in buy_orders:
         ledger.buy(ticker, asset_classes.get(ticker, "stock"), quantity, prices[ticker], on_date)

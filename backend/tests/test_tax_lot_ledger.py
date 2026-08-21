@@ -72,6 +72,19 @@ def test_ledger_sell_realizes_gain_and_applies_tax() -> None:
     assert ledger.lots.get("AAA", []) == []  # lot fully exhausted and removed
 
 
+def test_ledger_sell_with_apply_tax_false_owes_nothing() -> None:
+    ledger = PortfolioLedger(cash=0.0)
+    ledger.buy("AAA", "crypto", 10, 100.0, date(2024, 1, 1))
+    tracker = TaxYearTracker()
+
+    disposals = ledger.sell("AAA", 10, 500.0, date(2024, 3, 1), tracker, policy="fifo", apply_tax=False)
+
+    assert disposals[0].gross_gain == pytest.approx((500.0 - 100.0) * 10)
+    assert disposals[0].tax_owed == pytest.approx(0.0)
+    # cash = -cost_of_buy + full_sale_proceeds (no tax subtracted)
+    assert ledger.cash == pytest.approx(-100.0 * 10 + 500.0 * 10)
+
+
 def test_ledger_sell_partial_quantity_splits_across_lots() -> None:
     ledger = PortfolioLedger(cash=0.0)
     ledger.buy("AAA", "stock", 5, 100.0, date(2020, 1, 1))
