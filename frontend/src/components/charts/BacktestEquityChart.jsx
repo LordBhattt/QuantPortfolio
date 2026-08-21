@@ -6,6 +6,9 @@ export const STRATEGY_COLORS = {
   mvo_ledoit_wolf: "#3b82f6",
   full_pipeline: "hsl(var(--primary))",
   adaptive_bandit: "#a855f7",
+  no_tax: "#9ca3af",
+  fifo: "#f59e0b",
+  tax_aware: "hsl(var(--primary))",
 };
 
 export const STRATEGY_LABELS = {
@@ -14,6 +17,9 @@ export const STRATEGY_LABELS = {
   mvo_ledoit_wolf: "MVO + Ledoit-Wolf",
   full_pipeline: "BL + LW + HMM (production)",
   adaptive_bandit: "Adaptive Bandit",
+  no_tax: "Frictionless (no tax)",
+  fifo: "Naive FIFO",
+  tax_aware: "Tax-Aware",
 };
 
 export default function BacktestEquityChart({ data = [], strategies = [] }) {
