@@ -53,6 +53,13 @@ def init_ml_models(regime_detector: RegimeDetector, return_forecaster: ReturnFor
     set_regime_detector(regime_detector)
 
 
+def get_regime_detector() -> RegimeDetector | None:
+    """Expose the live-fitted regime detector so other modules (e.g. the
+    backtest engine) can replay the exact same model instead of fitting a
+    separate one."""
+    return _regime_detector
+
+
 async def run_optimization(
     request: OptimizationRequest,
     user_id: UUID,

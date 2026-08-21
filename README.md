@@ -26,6 +26,10 @@ In plain language: you tell the app what you own, it fetches market history, con
   - optional user views
   - optional LSTM-based forecasts
   - optional regime-aware covariance scaling
+- Backtest page with:
+  - walk-forward, monthly-rebalanced comparison of equal-weight, static MVO, MVO+Ledoit-Wolf, the full BL+LW+HMM production pipeline, and an adaptive regime-conditioned strategy bandit
+  - per-strategy CAGR, Sharpe, Sortino, Calmar, max drawdown, and turnover
+  - regime-conditional performance breakdown and a block-bootstrap significance test vs. a baseline strategy
 - Risk page with:
   - VaR and CVaR
   - max drawdown
@@ -91,10 +95,11 @@ backend/
   cache/redis_cache.py    Redis cache with memory fallback
   routers/                HTTP endpoints
   services/               Business logic
-  quant/                  Optimization, risk, factors, regimes, forecasts, data fetching
+  quant/                  Optimization, risk, factors, regimes, forecasts, backtesting, data fetching
   ml/                     LSTM model definition and offline trainer
   models/                 SQLAlchemy table definitions
   schemas/                Pydantic request/response schemas
+  scripts/                One-off maintenance scripts (e.g. build_backtest_dataset.py)
   tasks/scheduler.py      Periodic cache refresh and model-maintenance jobs
   tests/                  Backend tests
 ```
@@ -319,6 +324,37 @@ Why it is useful:
 
 - It tells you whether returns are coming from broad market exposure or from factor tilts.
 
+## Backtesting & Adaptive Strategy Selection
+
+The rest of this document describes the *live* pipeline: every request fetches current data (through the Redis cache) and answers "what should I do right now?" The Backtest page answers a different question -- "if I had been using this pipeline for the last several years, would it actually have worked?" -- and it is intentionally built on a separate, explicitly historical data path so that answering it doesn't put any extra load on the live request path or the free-tier market data APIs.
+
+### Historical dataset cache
+
+`backend/quant/backtest_data.py` fetches each backtest-universe asset's full price history once via the existing `DataFetcher` and stores it as a local parquet file under `backend/data/historical/` (git-ignored, regenerable). Every later call only fetches the days missing since the last update instead of re-downloading years of history. Build or refresh it with:
+
+```bash
+cd backend
+python -m backend.scripts.build_backtest_dataset
+```
+
+The fixed multi-asset universe (spanning stocks, ETFs, gold, bonds, and crypto across US and Indian markets) lives in `backend/quant/backtest_universe.py`.
+
+### Walk-forward engine
+
+`backend/quant/backtest.py` replays the same building blocks used by the live optimizer -- Ledoit-Wolf shrinkage, Black-Litterman blending, HMM regime scaling, constrained MVO -- against the cached history with monthly rebalancing and a strict no-lookahead window: at each rebalance date, a strategy only ever sees returns strictly before that date. Four strategies are compared: `equal_weight`, `static_mvo` (raw sample covariance), `mvo_ledoit_wolf` (shrinkage only), and `full_pipeline` (the actual production default: BL + LW + HMM). A flat transaction cost (basis points on turnover) is applied at each rebalance.
+
+### Adaptive regime-conditioned bandit
+
+`backend/quant/strategy_bandit.py` adds a fifth, adaptive strategy: a Thompson-Sampling contextual bandit whose context is the detected HMM regime (bull/sideways/bear) and whose arms are `static_mvo` / `mvo_ledoit_wolf` / `full_pipeline`. It learns purely from the walk-forward replay's own realized, volatility-normalized rewards -- never from future information -- which strategy has actually worked best in each regime so far, and prefers that one going forward. It is deliberately a small, inspectable posterior table rather than a black-box deep-RL policy.
+
+### Statistics
+
+`backend/quant/backtest_stats.py` computes per-strategy CAGR/Sharpe/Sortino/Calmar/max-drawdown/VaR/CVaR (reusing the existing `risk_engine.py` helpers), a regime-conditional breakdown of those same metrics, and a block-bootstrap confidence interval on the Sharpe-ratio difference between each strategy and a chosen baseline -- so an improvement can be reported as statistically supported (or honestly reported as not yet significant) rather than asserted from a single anecdotal run.
+
+### API and page
+
+`GET /api/v1/backtest/` (query params: `lookback_days`, `transaction_cost_bps`, `baseline`) runs the above against the local cache and returns per-day equity curves, the metrics table, the regime breakdown, the bootstrap significance results, and the bandit's posterior. The `/backtest` frontend page visualizes all of it: equity curves, a drawdown chart with a regime timeline, the significance panel, and a full comparison table.
+
 ## Data Model
 
 ### Core tables
@@ -371,6 +407,7 @@ All routes currently live under `/api/v1`.
 - `GET /api/v1/risk/{portfolio_id}/monte-carlo`
 - `GET /api/v1/analytics/{portfolio_id}`
 - `GET /api/v1/analytics/{portfolio_id}/factors`
+- `GET /api/v1/backtest/` -- walk-forward strategy comparison (see "Backtesting & Adaptive Strategy Selection" above)
 
 ### Health
 
