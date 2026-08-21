@@ -78,7 +78,7 @@ export default function Optimize() {
               <div className="h-px bg-black/[0.06]" />
 
               <div className="space-y-1">
-                <Toggle checked={useLstm} onCheckedChange={setUseLstm} label="LSTM Forecasts" hint="Use learned return priors" />
+                <Toggle checked={useLstm} onCheckedChange={setUseLstm} label="Momentum Forecasts" hint="Use learned return priors" />
                 <Toggle checked={useRegime} onCheckedChange={setUseRegime} label="Regime Scaling" hint="Adjust covariance by regime" />
               </div>
 
