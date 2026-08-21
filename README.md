@@ -355,6 +355,26 @@ The fixed multi-asset universe (spanning stocks, ETFs, gold, bonds, and crypto a
 
 `GET /api/v1/backtest/` (query params: `lookback_days`, `transaction_cost_bps`, `baseline`) runs the above against the local cache and returns per-day equity curves, the metrics table, the regime breakdown, the bootstrap significance results, and the bandit's posterior. The `/backtest` frontend page visualizes all of it: equity curves, a drawdown chart with a regime timeline, the significance panel, and a full comparison table.
 
+## Tax-Aware Rebalancing (India)
+
+Every strategy above optimizes pre-tax returns, same as the finance literature it's built on. That's a real gap for Indian investors specifically: a rupee of gain isn't worth the same regardless of *how* it's realized. Equity/MF gains are taxed at 20% if held under a year, 12.5% (over a Rs 1.25L annual exemption) if held longer. Debt/bond funds lost long-term treatment entirely after the FY2023-24 reclassification -- always slab rate, no matter how long they're held. Gold gets a 24-month long-term threshold. Crypto is the sharpest case: a flat 30% on every gain under Section 115BBH, and losses can offset **nothing** -- not other income, not even a gain on a different coin, and they can't be carried forward. A rebalance that ignores all of this can pay materially more tax than one that doesn't, with zero change to the underlying investment strategy -- purely from *which lot* gets sold.
+
+### Tax rules
+
+`backend/quant/tax_rules.py` encodes the rates and holding-period thresholds above (Union Budget 2024 law) and `TaxYearTracker` handles the two stateful parts real capital gains calculations require: the Rs 1.25L equity/MF long-term exemption is an *annual aggregate*, not a per-trade allowance, and short-/long-term capital losses can offset later gains within the same Indian fiscal year (1 April - 31 March) under the standard set-off ordering. These are representative rates for measuring the *structural* effect of asset-class- and holding-period-dependent taxation, not a substitute for professional tax advice -- Indian tax law is revised most fiscal years, and real liability also depends on the investor's income slab, surcharge, and cess, none of which are modeled here.
+
+### Lot ledger and lot-selection policies
+
+`backend/quant/tax_lot_ledger.py` simulates a real position ledger -- individual tax lots with quantity, acquisition date, and cost basis -- since tax depends on exactly which lot is sold, not just the aggregate weight change. Two lot-selection policies execute the *same* target-weight rebalance differently: `fifo` (oldest lot first, what a tax-blind rebalancer or brokerage default produces) and `tax_aware` (ranks lots by their tax cost right now: loss lots first since realizing them is free, then the lowest-rate gains, deferring the largest gains). For crypto specifically, `tax_aware` still prefers loss lots first even though the loss provides no offset benefit -- it's free to realize, so it's the cheapest lot available, which is exactly the behavior a naive policy misses.
+
+### Tax-aware backtest
+
+`backend/quant/tax_aware_backtest.py` replays a strategy's *already-computed* walk-forward target weights (default: `full_pipeline`, unchanged) through the lot ledger under three policies: a frictionless `no_tax` baseline, `fifo`, and `tax_aware`. The `no_tax` baseline uses identical trade sizing and ledger mechanics as `fifo` with tax switched off, so tax is the only isolated variable -- comparing against the walk-forward engine's own equity curve instead would also pick up its separate transaction-cost convention and mislabel the result. On the cached universe (~8 years, `full_pipeline`), naive FIFO rebalancing costs roughly 1.8-2.5% cumulative tax drag versus the frictionless baseline, and tax-aware lot selection recovers about a third of that -- with zero change to the investment strategy itself. The live universe currently lacks enough crypto history to demonstrate the no-offset case with real cached prices (CoinGecko's free tier only returns partial history); `backend/tests/test_tax_lot_ledger.py` and `test_tax_aware_backtest.py` demonstrate it precisely with synthetic data instead.
+
+### API and page
+
+The tax comparison is included in the `GET /api/v1/backtest/` response as `tax_comparison` (equity curves per policy, tax paid by asset class, and the naive-drag/tax-aware-savings/recovery percentages). The `/backtest` page's "Tax-Aware Rebalancing" section visualizes it.
+
 ## Data Model
 
 ### Core tables
