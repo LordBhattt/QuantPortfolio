@@ -7,6 +7,14 @@ import numpy as np
 
 from backend.schemas.optimization import FrontierPoint, PortfolioConstraints
 
+_CLASS_ALIASES = {
+    "stocks": "stock",
+    "crypto": "crypto",
+    "gold": "gold",
+    "mf_etf": "mf_etf",
+    "bonds": "bond",
+}
+
 
 def constrained_mvo(
     mu: np.ndarray,
@@ -29,10 +37,28 @@ def constrained_mvo(
     objective = cp.Maximize(risk_tolerance * portfolio_return - (1.0 - risk_tolerance) * portfolio_variance)
     constraints_list = [cp.sum(weights) == 1, weights >= 0]
 
-    # Per-asset cap to prevent concentration
-    cap = min(max_single_asset_weight, 1.0)
+    # Per-asset cap to prevent concentration. Must never go below 1/n_assets,
+    # otherwise n_assets * cap < 1 and the sum-to-1 constraint becomes
+    # infeasible for small portfolios (e.g. a 2-asset crypto-only portfolio
+    # capped at 25% each can never sum to 100%). It also must never be
+    # stricter than an explicit class max bound the caller configured for a
+    # given asset's class -- e.g. a "bonds: 20-80%" bound with only one bond
+    # asset means that single asset needs to be allowed up to 80%, not
+    # silently capped at the generic default and made infeasible.
+    base_cap = max(min(max_single_asset_weight, 1.0), 1.0 / n_assets)
     if n_assets > 1:
-        constraints_list.append(weights <= cap)
+        if constraints is not None:
+            class_max_by_asset_class = {
+                _CLASS_ALIASES[schema_name]: bounds["max"]
+                for schema_name, bounds in constraints.model_dump().items()
+                if schema_name in _CLASS_ALIASES
+            }
+            per_asset_cap = np.array(
+                [max(base_cap, class_max_by_asset_class.get(asset_class, 0.0)) for asset_class in asset_classes]
+            )
+            constraints_list.append(weights <= per_asset_cap)
+        else:
+            constraints_list.append(weights <= base_cap)
 
     if constraints is not None:
         constraints_list.extend(_build_class_constraints(weights, asset_classes, constraints))
@@ -103,15 +129,8 @@ def efficient_frontier(
 def _build_class_constraints(weights: cp.Variable, asset_classes: list[str], constraints: PortfolioConstraints) -> list:
     resolved_constraints: list = []
     class_map = constraints.model_dump()
-    aliases = {
-        "stocks": "stock",
-        "crypto": "crypto",
-        "gold": "gold",
-        "mf_etf": "mf_etf",
-        "bonds": "bond",
-    }
     for schema_name, bounds in class_map.items():
-        asset_class = aliases.get(schema_name)
+        asset_class = _CLASS_ALIASES.get(schema_name)
         if asset_class is None:
             continue
         indexes = [index for index, name in enumerate(asset_classes) if name == asset_class]
