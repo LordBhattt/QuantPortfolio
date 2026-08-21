@@ -34,6 +34,26 @@ function buildEquityChartData(strategies) {
   return Array.from(dateMap.values()).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
+function buildTaxEquityChartData(policies) {
+  const dateMap = new Map();
+  for (const policy of policies) {
+    for (const point of downsample(policy.equity_curve, CHART_MAX_POINTS)) {
+      const entry = dateMap.get(point.date) || { date: point.date };
+      entry[policy.policy] = point.value;
+      dateMap.set(point.date, entry);
+    }
+  }
+  return Array.from(dateMap.values()).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
+const ASSET_CLASS_LABELS = {
+  stock: "Stocks",
+  crypto: "Crypto",
+  gold: "Gold",
+  mf_etf: "MF / ETF",
+  bond: "Bonds",
+};
+
 function buildDrawdownChartData(strategy) {
   if (!strategy) return [];
   let peak = -Infinity;
@@ -64,6 +84,17 @@ export default function Backtest() {
   const activeStrategy = strategies.find((s) => s.name === comparisonStrategy) || strategies[0];
   const drawdownChartData = useMemo(() => buildDrawdownChartData(activeStrategy), [activeStrategy]);
   const regimePoints = activeStrategy?.equity_curve ?? [];
+
+  const taxComparison = data?.tax_comparison ?? null;
+  const taxPolicies = taxComparison?.policies ?? [];
+  const taxPolicyNames = useMemo(() => taxPolicies.map((p) => p.policy), [taxPolicies]);
+  const taxEquityChartData = useMemo(() => buildTaxEquityChartData(taxPolicies), [taxPolicies]);
+  const fifoTaxByClass = taxPolicies.find((p) => p.policy === "fifo")?.tax_by_asset_class ?? {};
+  const awareTaxByClass = taxPolicies.find((p) => p.policy === "tax_aware")?.tax_by_asset_class ?? {};
+  const taxAssetClasses = useMemo(
+    () => Array.from(new Set([...Object.keys(fifoTaxByClass), ...Object.keys(awareTaxByClass)])),
+    [fifoTaxByClass, awareTaxByClass],
+  );
 
   const isMissingDataset = error?.toLowerCase().includes("dataset") || error?.toLowerCase().includes("cache");
 
@@ -218,6 +249,71 @@ export default function Backtest() {
               )}
             </Card>
           </div>
+
+          {!loading && data && taxComparison && (
+            <div className="mt-6 animate-fadeUp opacity-0" style={{ animationDelay: "360ms" }}>
+              <div className="mb-4">
+                <h2 className="text-xl font-sans font-bold tracking-tight text-gray-900">Tax-Aware Rebalancing (India)</h2>
+                <p className="mt-1 text-sm font-mono text-gray-500">
+                  Same {STRATEGY_LABELS[taxComparison.strategy] || taxComparison.strategy} target weights, replayed
+                  through a real lot ledger under Indian capital gains rules &mdash; only which specific lots get sold
+                  differs between policies.
+                </p>
+              </div>
+
+              <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Card className="p-5">
+                  <div className="text-[11px] font-sans font-semibold uppercase tracking-[0.12em] text-gray-400">Naive Tax Drag</div>
+                  <div className="mt-2 font-mono text-2xl font-bold text-red-600">-{taxComparison.naive_tax_drag_pct.toFixed(2)}%</div>
+                  <div className="mt-1 text-xs font-mono text-gray-500">frictionless vs. naive FIFO rebalancing</div>
+                </Card>
+                <Card className="p-5">
+                  <div className="text-[11px] font-sans font-semibold uppercase tracking-[0.12em] text-gray-400">Tax-Aware Savings</div>
+                  <div className="mt-2 font-mono text-2xl font-bold text-primary">+{taxComparison.tax_aware_savings_pct.toFixed(2)}%</div>
+                  <div className="mt-1 text-xs font-mono text-gray-500">tax-aware lot selection vs. naive FIFO</div>
+                </Card>
+                <Card className="p-5">
+                  <div className="text-[11px] font-sans font-semibold uppercase tracking-[0.12em] text-gray-400">Drag Recovered</div>
+                  <div className="mt-2 font-mono text-2xl font-bold text-gray-900">{taxComparison.tax_aware_recovery_pct.toFixed(0)}%</div>
+                  <div className="mt-1 text-xs font-mono text-gray-500">of the naive drag, from lot choice alone</div>
+                </Card>
+              </div>
+
+              <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+                <div className="lg:col-span-2">
+                  <Card className="p-5 min-h-[340px]">
+                    <div className="mb-4">
+                      <h3 className="text-[15px] font-sans font-semibold text-gray-900">After-Tax Equity Curves</h3>
+                      <p className="mt-0.5 text-xs font-mono text-gray-500">
+                        Starting capital &#8377;{taxComparison.starting_capital.toLocaleString("en-IN")}
+                      </p>
+                    </div>
+                    <BacktestEquityChart data={taxEquityChartData} strategies={taxPolicyNames} />
+                  </Card>
+                </div>
+                <Card className="p-5">
+                  <h3 className="text-[15px] font-sans font-semibold text-gray-900 mb-1">Tax Paid by Asset Class</h3>
+                  <p className="text-xs font-mono text-gray-500 mb-4">Naive FIFO vs. tax-aware</p>
+                  {taxAssetClasses.length === 0 ? (
+                    <EmptyState title="No disposals in this window" />
+                  ) : (
+                    <div className="space-y-3">
+                      {taxAssetClasses.map((assetClass) => (
+                        <div key={assetClass} className="flex items-baseline justify-between border-b border-black/[0.04] pb-2 last:border-0">
+                          <span className="text-[11px] font-sans font-medium text-gray-600">{ASSET_CLASS_LABELS[assetClass] || assetClass}</span>
+                          <span className="font-mono text-xs text-gray-900">
+                            &#8377;{Math.round(fifoTaxByClass[assetClass] || 0).toLocaleString("en-IN")}
+                            <span className="text-gray-300 mx-1">&rarr;</span>
+                            &#8377;{Math.round(awareTaxByClass[assetClass] || 0).toLocaleString("en-IN")}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              </div>
+            </div>
+          )}
         </>
       )}
     </PageWrapper>
