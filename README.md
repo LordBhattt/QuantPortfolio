@@ -429,6 +429,26 @@ All routes currently live under `/api/v1`.
 
 ## Local Development Setup
 
+### Zero-dependency quickstart (verified working)
+
+If you just want to clone this and see it run -- no Postgres, no Redis, no Docker, no `.env` file at all -- this path has been tested end-to-end from a genuinely fresh clone:
+
+```bash
+# Backend
+cd backend
+python -m venv .venv
+.venv\Scripts\activate        # Windows; use `source .venv/bin/activate` on macOS/Linux
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+
+# Frontend (separate terminal)
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173`, register an account, and use the app. No database or cache setup needed: `DATABASE_URL`'s default points at a local Postgres that (on a fresh machine) won't exist, so `backend/main.py`'s startup automatically falls back to a local SQLite file (`backend/quantportfolio.db`); Redis does the same thing, falling back to an in-memory cache. Both fallbacks are logged clearly at startup so you always know which one is active. This is the fastest way to confirm the app runs correctly on a new device -- for a setup closer to the real deployment target (Postgres + Redis), see the full setup below or the Docker Compose option.
+
 ### 1. Prerequisites
 
 You will need:
@@ -563,7 +583,19 @@ Open:
 
 ### 9. Docker deployment
 
-If you want the full stack in one command, use Docker Compose from the repository root:
+If you want the full stack in one command, use Docker Compose from the repository root. It reads its backend environment from a root-level `.env` file, so create one first:
+
+```bash
+cp backend/.env.example .env
+```
+
+Then edit `.env` so `DATABASE_URL` points at the `db` service name (not `localhost`) -- Docker Compose's internal network resolves service names, not your host machine's `localhost`:
+
+```env
+DATABASE_URL=postgresql+asyncpg://quantportfolio:quantportfolio@db:5432/quantportfolio
+```
+
+Then:
 
 ```bash
 docker compose up --build
