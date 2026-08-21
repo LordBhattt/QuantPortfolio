@@ -36,9 +36,6 @@ def create_scheduler(regime_detector: RegimeDetector, fetcher) -> AsyncIOSchedul
         except Exception as exc:
             logger.exception("regime detector refit failed: %s", exc)
 
-    async def trigger_lstm_retrain() -> None:
-        logger.info("scheduled LSTM retraining trigger fired; run backend.ml.trainer offline with fresh data")
-
     async def run_market_hours_monitor() -> None:
         try:
             now = datetime.now(IST)
@@ -63,7 +60,6 @@ def create_scheduler(regime_detector: RegimeDetector, fetcher) -> AsyncIOSchedul
 
     scheduler.add_job(refresh_price_cache, CronTrigger(minute=0), name="refresh_price_cache")
     scheduler.add_job(refit_regime_detector, CronTrigger(day_of_week="sun", hour=2), name="refit_regime_detector")
-    scheduler.add_job(trigger_lstm_retrain, CronTrigger(day=1, hour=3), name="trigger_lstm_retrain")
     scheduler.add_job(
         run_market_hours_monitor,
         CronTrigger(day_of_week="mon-fri", hour="9-15", minute="15,45", timezone=IST),
