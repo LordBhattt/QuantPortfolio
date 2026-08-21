@@ -16,6 +16,7 @@ const links = [
   { to: "/optimize", label: "Optimize" },
   { to: "/risk", label: "Risk" },
   { to: "/analytics", label: "Analytics" },
+  { to: "/backtest", label: "Backtest" },
   { to: "/holdings", label: "Holdings" },
 ];
 
