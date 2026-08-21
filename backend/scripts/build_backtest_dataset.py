@@ -20,29 +20,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend.cache.redis_cache import RedisCache
 from backend.quant.backtest_data import update_cached_prices
+from backend.quant.backtest_universe import BACKTEST_UNIVERSE
 from backend.quant.data_fetcher import DataFetcher
-
-# Fixed multi-asset universe spanning every asset class already supported by
-# the app (see backend/seed_assets.py), sized to keep walk-forward backtests
-# fast while still being diversified enough for the paper's regime analysis.
-BACKTEST_UNIVERSE = [
-    ("AAPL", "yahoo"),
-    ("MSFT", "yahoo"),
-    ("GOOGL", "yahoo"),
-    ("AMZN", "yahoo"),
-    ("SPY", "yahoo"),
-    ("QQQ", "yahoo"),
-    ("RELIANCE.NS", "yahoo"),
-    ("TCS.NS", "yahoo"),
-    ("HDFCBANK.NS", "yahoo"),
-    ("NIFTYBEES.NS", "yahoo"),
-    ("GLD", "yahoo"),
-    ("IAU", "yahoo"),
-    ("TLT", "yahoo"),
-    ("BND", "yahoo"),
-    ("bitcoin", "coingecko"),
-    ("ethereum", "coingecko"),
-]
 
 
 async def main() -> None:
@@ -50,7 +29,8 @@ async def main() -> None:
     await cache.connect()
     fetcher = DataFetcher(cache)
     try:
-        for ticker, source in BACKTEST_UNIVERSE:
+        for asset in BACKTEST_UNIVERSE:
+            ticker, source = asset.ticker, asset.source
             try:
                 frame = await update_cached_prices(fetcher, ticker, source)
                 print(f"{ticker:15s} ({source:9s}) -> {len(frame):5d} rows, through {frame.index.max().date()}")
