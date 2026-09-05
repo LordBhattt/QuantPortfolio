@@ -9,8 +9,11 @@ Implements regime-switching GBM with:
 
 CRITICAL: mu is expected as daily ARITHMETIC return (not log return).
 The Itô correction converts: log_drift = mu_arith - 0.5*σ²
-This is subtracted from the ACTUAL simulation variance (after Student-t
-scaling), NOT the raw covariance variance.
+The σ² used is the PORTFOLIO's own (diversified) simulation variance,
+applied once at the portfolio level -- not each asset's individual
+variance applied per-asset then weighted, which would ignore
+diversification and tax the drift once per asset instead of once for
+the portfolio as a whole.
 """
 
 import hashlib
@@ -118,23 +121,22 @@ def simulate_portfolio(
     # mu is daily arithmetic return. For GBM log-return simulation:
     #   log_return = (mu_arith - 0.5 * sigma_actual²) + sigma_actual * Z
     #
-    # sigma_actual² must match what the simulation ACTUALLY produces,
-    # which depends on whether we use Student-t or Gaussian.
+    # sigma_actual² must match what the simulation ACTUALLY produces for
+    # the PORTFOLIO's value process, which depends on whether we use
+    # Student-t or Gaussian (both scaled to unit variance, so the
+    # portfolio's simulated variance equals its Cholesky-derived
+    # port_vol_sq below regardless of the innovation distribution).
     #
-    # For Student-t(df): Var(Z_scaled) = 1.0 (after our scaling)
-    # So the actual variance per asset = diag(cov_sim) (same as Gaussian)
-    # because we scale t-innovations to have unit variance.
-
-    sigma_sq_sim = np.diag(cov_sim)
+    # Portfolio-level parameters. port_vol_sq is the *diversified*
+    # portfolio variance (w' Σ w), computed once via the Cholesky
+    # factor -- this must be what gets subtracted, not the weighted
+    # sum of each asset's own undiversified variance, or diversification
+    # benefit is lost and a small allocation to a high-vol asset (e.g.
+    # crypto) tanks the whole portfolio's drift disproportionately.
     mu_adjusted = mu * drift_mult
-
-    # Itô correction using the SIMULATION variance
-    drift = mu_adjusted - 0.5 * sigma_sq_sim
-
-    # Portfolio-level parameters
-    port_drift = float(drift @ weights)
     port_chol_row = chol.T @ weights
     port_vol_sq = float(port_chol_row @ port_chol_row)
+    port_drift = float(mu_adjusted @ weights) - 0.5 * port_vol_sq
 
     # ── Vectorised simulation ──
     all_paths = np.empty((paths, horizon))
