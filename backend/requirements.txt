@@ -25,13 +25,14 @@ scikit-learn>=1.6.0,<2
 hmmlearn>=0.3.2,<1
 pyarrow>=16.0.0,<21
 
-# ML
-# The LSTM forecaster is optional at runtime; it falls back cleanly if torch is unavailable.
-
 # Auth
 python-jose[cryptography]>=3.3.0,<4
 passlib[bcrypt]>=1.7.4,<2
-bcrypt>=4.0.0,<5
+# Capped below 4.1: passlib 1.7.4's bcrypt backend probes bcrypt.__about__,
+# which bcrypt 4.1+ removed. Newer bcrypt still hashes/verifies correctly
+# through passlib's fallback path, but it logs a warning on every call --
+# pinning avoids that without needing a passlib release that isn't out yet.
+bcrypt>=4.0.0,<4.1
 python-multipart>=0.0.9,<1
 
 # Scheduling

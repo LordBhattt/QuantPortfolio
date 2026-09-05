@@ -13,7 +13,7 @@ from urllib.request import urlopen
 
 import httpx
 import pandas as pd
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from backend.cache.redis_cache import RedisCache
 from backend.config import get_settings
@@ -26,7 +26,28 @@ COINGECKO_ID_MAP = {
     "SOL": "solana",
     "DOGE": "dogecoin",
     "MATIC": "matic-network",
+    "BNB": "binancecoin",
 }
+
+# NSE and Yahoo's unauthenticated v7 quote endpoint reject requests with a
+# permanent 401/403 in this environment (no browser session/crumb). Once one
+# of these is seen, skip re-attempting it for a short window instead of
+# retrying (which only adds latency, never succeeds) on every subsequent
+# request.
+_NSE_UNAVAILABLE_SENTINEL = "__unavailable__"
+_NSE_UNAVAILABLE_TTL_SECONDS = 300
+_YAHOO_V7_UNAVAILABLE_KEY = "yahoo:v7_quote:unavailable"
+_YAHOO_V7_UNAVAILABLE_TTL_SECONDS = 3600
+
+
+def _is_retryable_http_error(exc: BaseException) -> bool:
+    """Only retry transient failures. A 4xx status (other than 429) means
+    the request is permanently invalid/blocked -- retrying with exponential
+    backoff just adds latency with zero chance of succeeding."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        return status == 429 or status >= 500
+    return isinstance(exc, (httpx.TransportError, httpx.TimeoutException))
 
 YAHOO_CRYPTO_TICKER_MAP = {
     "BTC": "BTC-USD",
@@ -95,7 +116,11 @@ class DataFetcher:
     async def close(self) -> None:
         await self.client.aclose()
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception(_is_retryable_http_error),
+    )
     async def _get_json(
         self, url: str, params: dict | None = None, headers: dict[str, str] | None = None, source: str | None = None
     ) -> dict:
@@ -104,7 +129,11 @@ class DataFetcher:
         response.raise_for_status()
         return response.json()
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception(_is_retryable_http_error),
+    )
     async def _get_text(
         self, url: str, params: dict | None = None, headers: dict[str, str] | None = None, source: str | None = None
     ) -> str:
@@ -205,6 +234,8 @@ class DataFetcher:
         symbol = ticker.upper().replace(".NS", "")
         cache_key = f"nse:last_price:{symbol}"
         cached = await self.cache.get(cache_key)
+        if cached == _NSE_UNAVAILABLE_SENTINEL:
+            return None
         if cached is not None:
             with contextlib.suppress(ValueError):
                 return float(cached)
@@ -214,6 +245,7 @@ class DataFetcher:
             data = await self._get_json(url, headers=self._browser_headers(), source="nse")
             price = float(data["priceInfo"]["lastPrice"])
         except Exception:
+            await self.cache.set(cache_key, _NSE_UNAVAILABLE_SENTINEL, ttl=_NSE_UNAVAILABLE_TTL_SECONDS)
             return None
 
         await self.cache.set(cache_key, str(price), ttl=settings.LIVE_QUOTE_TTL_SECONDS)
@@ -222,25 +254,32 @@ class DataFetcher:
     async def _fetch_yahoo_quote_prices(self, tickers: list[str]) -> dict[str, float]:
         if not tickers:
             return {}
+        if await self.cache.get(_YAHOO_V7_UNAVAILABLE_KEY) is not None:
+            return {}
 
         quote_base = settings.YAHOO_BASE.replace("/v8/finance", "/v7/finance")
         url = f"{quote_base}/quote"
         prices: dict[str, float] = {}
-        for start in range(0, len(tickers), 50):
-            chunk = tickers[start : start + 50]
-            data = await self._get_json(url, params={"symbols": ",".join(chunk)}, source="yahoo")
-            results = data.get("quoteResponse", {}).get("result", [])
-            for item in results:
-                symbol = str(item.get("symbol", "")).upper()
-                price = item.get("regularMarketPrice")
-                if price is None:
-                    price = item.get("postMarketPrice") or item.get("preMarketPrice")
-                try:
-                    parsed = float(price)
-                except (TypeError, ValueError):
-                    continue
-                if parsed > 0:
-                    prices[symbol] = parsed
+        try:
+            for start in range(0, len(tickers), 50):
+                chunk = tickers[start : start + 50]
+                data = await self._get_json(url, params={"symbols": ",".join(chunk)}, source="yahoo")
+                results = data.get("quoteResponse", {}).get("result", [])
+                for item in results:
+                    symbol = str(item.get("symbol", "")).upper()
+                    price = item.get("regularMarketPrice")
+                    if price is None:
+                        price = item.get("postMarketPrice") or item.get("preMarketPrice")
+                    try:
+                        parsed = float(price)
+                    except (TypeError, ValueError):
+                        continue
+                    if parsed > 0:
+                        prices[symbol] = parsed
+        except Exception as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status in (401, 403):
+                await self.cache.set(_YAHOO_V7_UNAVAILABLE_KEY, "1", ttl=_YAHOO_V7_UNAVAILABLE_TTL_SECONDS)
         return prices
 
     async def _fetch_usd_inr_rate(self) -> float:
@@ -363,8 +402,6 @@ class DataFetcher:
             for item in pending_yahoo:
                 ticker = item["ticker"]
                 native_price = yahoo_prices.get(ticker)
-                if native_price is None and (item["exchange"] == "NSE" or ticker.endswith(".NS")):
-                    native_price = await self._fetch_nse_last_price(ticker)
                 if native_price is None:
                     fallback = await self.get_latest_price_in_inr(
                         ticker,
