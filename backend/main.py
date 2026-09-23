@@ -30,6 +30,8 @@ from backend.schemas.common import HealthResponse
 from backend.services.asset_service import seed_default_assets
 from backend.services.optimization_service import init_ml_models
 from backend.tasks.scheduler import create_scheduler
+from backend.quant.backtest_data import load_cached_prices
+from backend.quant.backtest_universe import BACKTEST_UNIVERSE
 
 settings = get_settings()
 logging.basicConfig(level=logging.DEBUG if settings.DEBUG else logging.INFO)
@@ -82,6 +84,16 @@ async def lifespan(app: FastAPI):
     init_ml_models(regime_detector, forecaster)
     scheduler = create_scheduler(regime_detector, fetcher)
     scheduler.start()
+
+    # ── Backtest dataset check ──
+    cached_count = sum(1 for asset in BACKTEST_UNIVERSE if load_cached_prices(asset.ticker) is not None)
+    if cached_count == 0:
+        logger.warning(
+            "BACKTEST DATASET NOT BUILT: Backtest page will show an error until you run: "
+            "python -m backend.scripts.build_backtest_dataset"
+        )
+    else:
+        logger.info("backtest dataset: %d/%d assets cached", cached_count, len(BACKTEST_UNIVERSE))
 
     try:
         yield

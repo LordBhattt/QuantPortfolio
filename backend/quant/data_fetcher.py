@@ -29,13 +29,26 @@ COINGECKO_ID_MAP = {
     "BNB": "binancecoin",
 }
 
+YAHOO_CRYPTO_TICKER_MAP = {
+    "BITCOIN": "BTC-USD",
+    "ETHEREUM": "ETH-USD",
+    "SOLANA": "SOL-USD",
+    "DOGECOIN": "DOGE-USD",
+    "MATIC-NETWORK": "MATIC-USD",
+    "BINANCECOIN": "BNB-USD",
+    "BTC": "BTC-USD",
+    "ETH": "ETH-USD",
+}
+
 # NSE and Yahoo's unauthenticated v7 quote endpoint reject requests with a
 # permanent 401/403 in this environment (no browser session/crumb). Once one
 # of these is seen, skip re-attempting it for a short window instead of
 # retrying (which only adds latency, never succeeds) on every subsequent
 # request.
 _NSE_UNAVAILABLE_SENTINEL = "__unavailable__"
-_NSE_UNAVAILABLE_TTL_SECONDS = 300
+_NSE_UNAVAILABLE_TTL_SECONDS = 3600  # 1 hour — NSE scraping without a browser session never works
+# Global NSE block key — set on first 403 from ANY symbol, blocks all NSE for 1 hour
+_NSE_GLOBAL_BLOCK_KEY = "nse:global_block"
 _YAHOO_V7_UNAVAILABLE_KEY = "yahoo:v7_quote:unavailable"
 _YAHOO_V7_UNAVAILABLE_TTL_SECONDS = 3600
 
@@ -49,13 +62,7 @@ def _is_retryable_http_error(exc: BaseException) -> bool:
         return status == 429 or status >= 500
     return isinstance(exc, (httpx.TransportError, httpx.TimeoutException))
 
-YAHOO_CRYPTO_TICKER_MAP = {
-    "BTC": "BTC-USD",
-    "ETH": "ETH-USD",
-    "SOL": "SOL-USD",
-    "DOGE": "DOGE-USD",
-    "MATIC": "MATIC-USD",
-}
+
 
 # Minimum seconds between two outbound requests to the same provider. Defense
 # in depth on top of the existing Redis cache: keeps normal live usage (and
@@ -231,6 +238,11 @@ class DataFetcher:
         return frame[["date", "open", "high", "low", "close", "volume"]].set_index("date").sort_index()
 
     async def _fetch_nse_last_price(self, ticker: str) -> float | None:
+        # Fast-path: if NSE has globally failed before (browser session required),
+        # skip the call entirely rather than wasting a round-trip.
+        if await self.cache.get(_NSE_GLOBAL_BLOCK_KEY) is not None:
+            return None
+
         symbol = ticker.upper().replace(".NS", "")
         cache_key = f"nse:last_price:{symbol}"
         cached = await self.cache.get(cache_key)
@@ -245,7 +257,9 @@ class DataFetcher:
             data = await self._get_json(url, headers=self._browser_headers(), source="nse")
             price = float(data["priceInfo"]["lastPrice"])
         except Exception:
+            # Mark this symbol AND the global key unavailable
             await self.cache.set(cache_key, _NSE_UNAVAILABLE_SENTINEL, ttl=_NSE_UNAVAILABLE_TTL_SECONDS)
+            await self.cache.set(_NSE_GLOBAL_BLOCK_KEY, "1", ttl=_NSE_UNAVAILABLE_TTL_SECONDS)
             return None
 
         await self.cache.set(cache_key, str(price), ttl=settings.LIVE_QUOTE_TTL_SECONDS)
@@ -403,14 +417,25 @@ class DataFetcher:
                 ticker = item["ticker"]
                 native_price = yahoo_prices.get(ticker)
                 if native_price is None:
-                    fallback = await self.get_latest_price_in_inr(
-                        ticker,
-                        item["source"],
-                        item["exchange"],
-                        item["currency"],
-                    )
-                    if fallback is not None:
-                        prices[ticker] = fallback
+                    # Yahoo v7 failed — fall back directly to Yahoo chart (last close).
+                    # Do NOT call get_latest_price_in_inr here; it would retry NSE which is
+                    # blocked, adding latency. Go straight to history.
+                    try:
+                        frame = await self.get_price_history(ticker, item["source"], days=5)
+                        if not frame.empty:
+                            hist_price = float(frame["close"].iloc[-1])
+                            if item["currency"] == "USD":
+                                if usd_inr_rate is None:
+                                    with contextlib.suppress(Exception):
+                                        usd_inr_rate = await self.get_usd_inr_rate()
+                                if usd_inr_rate is not None:
+                                    hist_price *= usd_inr_rate
+                                else:
+                                    continue
+                            prices[ticker] = hist_price
+                            await self.cache.set(item["cache_key"], str(hist_price), ttl=settings.LIVE_QUOTE_TTL_SECONDS)
+                    except Exception:
+                        pass
                     continue
 
                 if item["currency"] == "USD" and usd_inr_rate is None:

@@ -7,7 +7,8 @@ from sqlalchemy import insert, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.data_types import CurrentUser
-from backend.database import AsyncSessionLocal, get_db
+import backend.database as _db_module
+from backend.database import get_db
 from backend.dependencies import get_current_user, get_fetcher
 from backend.errors import AppError
 from backend.models.portfolio import portfolios
@@ -141,7 +142,7 @@ async def _reoptimize_portfolio_after_change(portfolio_id: UUID, user_id: UUID) 
         use_lstm_forecasts=False,
     )
 
-    async with AsyncSessionLocal() as task_db:
+    async with _db_module.AsyncSessionLocal() as task_db:
         try:
             result = await run_optimization(request, user_id, task_db, fetcher)
         except AppError as exc:
