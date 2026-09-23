@@ -233,7 +233,7 @@ async def test_background_reoptimization_updates_weights_and_alerts(sqlite_sessi
     monkeypatch.setattr(portfolio_router.asyncio, "sleep", fake_sleep)
     monkeypatch.setattr(portfolio_router, "run_optimization", fake_run_optimization)
     monkeypatch.setattr(portfolio_router, "get_fetcher", lambda: object())
-    monkeypatch.setattr(portfolio_router, "AsyncSessionLocal", sqlite_session_factory)
+    monkeypatch.setattr(portfolio_router._db_module, "AsyncSessionLocal", sqlite_session_factory)
 
     await portfolio_router._reoptimize_portfolio_after_change(portfolio_id, user_id)
     await portfolio_router._reoptimize_portfolio_after_change(portfolio_id, user_id)
