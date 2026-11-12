@@ -25,6 +25,10 @@ Key design principles:
 import numpy as np
 import pandas as pd
 
+from backend.config import get_settings
+
+_settings = get_settings()
+
 # ── Long-term nominal return priors (annualised, INR) ────────────────
 ASSET_CLASS_ANNUAL_PRIOR: dict[str, float] = {
     "stock":  0.11,   # Nifty 50 long-run CAGR
@@ -220,19 +224,20 @@ def blend_expected_returns(
         + momentum_adj
     )
 
-    # ── 7. Floor: Itô-aware per-asset floor ──
-    # MC applies: log_drift = mu_arith - 0.5*σ²
-    # For net log-drift ≥ scale*Rf, we need: mu_arith ≥ scale*Rf + 0.5*σ²
+    # ── 7. Floor: Ito-aware per-asset floor ──
+    # MC applies: log_drift = mu_arith - 0.5*sigma^2
+    # For net log-drift >= scale*Rf, we need: mu_arith >= scale*Rf + 0.5*sigma^2
     # This is per-asset since each asset has different volatility.
-    rf_daily = 0.065 / 252.0
+    rf_daily = _settings.RISK_FREE_RATE / 252.0
     sigma_sq_daily = np.diag(cov_annual) / 252.0   # daily variance per asset
-    if regime_state == 0:  # bull
-        drift_floor = rf_daily * 1.0 + 0.5 * sigma_sq_daily
-    elif regime_state == 1:  # sideways
-        drift_floor = rf_daily * 0.6 + 0.5 * sigma_sq_daily
-    else:  # bear
-        drift_floor = rf_daily * 0.1 + 0.5 * sigma_sq_daily * 0.5
-    mu_blended = np.maximum(mu_blended, drift_floor)
+    if _settings.EXPECTED_RETURN_FLOOR_ENABLED:
+        if regime_state == 0:  # bull
+            drift_floor = rf_daily * 1.0 + 0.5 * sigma_sq_daily
+        elif regime_state == 1:  # sideways
+            drift_floor = rf_daily * 0.6 + 0.5 * sigma_sq_daily
+        else:  # bear
+            drift_floor = rf_daily * 0.1 + 0.5 * sigma_sq_daily * 0.5
+        mu_blended = np.maximum(mu_blended, drift_floor)
 
     diagnostics = {
         "regime": profile["label"],

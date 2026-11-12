@@ -13,6 +13,7 @@ import OnboardingModal from "./components/onboarding/OnboardingModal.jsx";
 import NotFound from "./pages/NotFound.tsx";
 import { usePortfolioStore } from "./store/portfolioStore";
 
+const Backtest = lazy(() => import("./pages/Backtest.jsx"));
 const Dashboard = lazy(() => import("./pages/Dashboard.jsx"));
 const Optimize = lazy(() => import("./pages/Optimize.jsx"));
 const Risk = lazy(() => import("./pages/Risk.jsx"));
@@ -110,6 +111,7 @@ const App = () => (
           >
             <Route index element={<HomeRedirect />} />
             <Route path="dashboard" element={<Dashboard />} />
+            <Route path="backtest" element={<Backtest />} />
             <Route path="optimize" element={<Optimize />} />
             <Route path="risk" element={<Risk />} />
             <Route path="analytics" element={<Analytics />} />

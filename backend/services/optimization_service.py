@@ -37,7 +37,15 @@ from backend.quant.forecaster import ReturnForecaster
 from backend.quant.mvo import constrained_mvo, efficient_frontier
 from backend.quant.regime import RegimeDetector, RegimeState
 from backend.quant.returns import align_returns
-from backend.schemas.optimization import AssetWeight, OptimizationRequest, OptimizationResult, PortfolioConstraints
+from backend.schemas.optimization import (
+    AssetDiagnostics,
+    AssetWeight,
+    OptimizationDiagnostics,
+    OptimizationRequest,
+    OptimizationResult,
+    PortfolioConstraints,
+    RegimeProbabilities,
+)
 from backend.services.portfolio_service import load_portfolio_snapshot
 from backend.services.risk_service import set_regime_detector
 
@@ -360,6 +368,51 @@ async def run_optimization(
         if abs(delta) / total_value > 0.01:
             rebalance_trades.append(item)
 
+    # ── Build diagnostics ──
+    diag_data = opt_result.get("diagnostics", {})
+    tickers_list = opt_result.get("tickers", tickers)
+    asset_classes_list = opt_result.get("asset_classes", asset_classes)
+    eq_annual = diag_data.get("equilibrium_annual", [0.0] * len(tickers_list))
+    hist_annual = diag_data.get("historical_annual", [0.0] * len(tickers_list))
+    ml_annual = diag_data.get("ml_annual", [0.0] * len(tickers_list))
+    mom_annual = diag_data.get("momentum_annual", [0.0] * len(tickers_list))
+    blend_annual = diag_data.get("blended_annual", [0.0] * len(tickers_list))
+
+    per_asset_diag = [
+        AssetDiagnostics(
+            ticker=t,
+            asset_class=ac,
+            equilibrium_return_annual=float(eq_annual[i]) if i < len(eq_annual) else 0.0,
+            historical_return_annual=float(hist_annual[i]) if i < len(hist_annual) else 0.0,
+            ml_return_annual=float(ml_annual[i]) if i < len(ml_annual) else 0.0,
+            momentum_return_annual=float(mom_annual[i]) if i < len(mom_annual) else 0.0,
+            blended_return_annual=float(blend_annual[i]) if i < len(blend_annual) else 0.0,
+        )
+        for i, (t, ac) in enumerate(zip(tickers_list, asset_classes_list))
+    ]
+
+    _probs = regime_probs if len(regime_probs) == 3 else np.array([0.0, 1.0, 0.0])
+    regime_diag = RegimeProbabilities(
+        bull=float(_probs[0]),
+        sideways=float(_probs[1]),
+        bear=float(_probs[2]),
+        current_regime=regime_label,
+    )
+
+    model_kind = "none"
+    ml_weight_used = 0.0
+    use_ml_flag = getattr(request, "use_ml_forecast", None) or getattr(request, "use_lstm_forecasts", False)
+    if _return_forecaster is not None and use_ml_flag:
+        model_kind = getattr(_return_forecaster, "model_kind", "none")
+        ml_weight_used = 0.30
+
+    optimization_diagnostics = OptimizationDiagnostics(
+        per_asset=per_asset_diag,
+        regime_probabilities=regime_diag,
+        model_kind=model_kind,
+        ml_weight_used=ml_weight_used,
+    )
+
     return OptimizationResult(
         portfolio_id=request.portfolio_id,
         regime=regime_label,
@@ -371,4 +424,5 @@ async def run_optimization(
         sharpe_ratio=sharpe,
         efficient_frontier=frontier,
         rebalance_trades=rebalance_trades,
+        diagnostics=optimization_diagnostics,
     )

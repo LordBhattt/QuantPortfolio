@@ -1,5 +1,8 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useMemo, useState, useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import {
+  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+} from "recharts";
 
 import BenchmarkComparisonChart from "../components/charts/BenchmarkComparisonChart";
 import PerformanceChart from "../components/charts/PerformanceChart";
@@ -15,6 +18,7 @@ import { useHoldings } from "../hooks/usePortfolio";
 import { useRiskMetrics } from "../hooks/useRisk";
 import { mapAllocationData, mergeHoldingsWithAnalytics } from "../lib/portfolioMappers";
 import { usePortfolioStore } from "../store/portfolioStore";
+import { getRegimeHistory } from "../api/regime";
 
 const RANGES = ["7D", "1M", "3M", "1Y"];
 const RANGE_LEN = { "7D": 7, "1M": 30, "3M": 90, "1Y": 365 };
@@ -226,6 +230,95 @@ export default function Dashboard() {
           />
         </Card>
       </div>
+
+      <RegimeHistoryChart />
+
+      <div className="animate-fadeUp opacity-0" style={{ animationDelay: "420ms" }}>
+        <Card className="p-4 border border-indigo-100 bg-indigo-50/40">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-indigo-900">Model Track Record</h3>
+              <p className="text-xs text-indigo-600 mt-0.5">Walk-forward backtest - no lookahead data</p>
+            </div>
+            <Link
+              to="/backtest"
+              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 underline-offset-2 hover:underline"
+            >
+              View Backtest Lab
+            </Link>
+          </div>
+        </Card>
+      </div>
     </PageWrapper>
+  );
+}
+
+const REGIME_COLORS = { bull: "#10b981", sideways: "#f59e0b", bear: "#ef4444" };
+const REGIME_BG = { bull: "rgba(16,185,129,0.12)", sideways: "rgba(245,158,11,0.12)", bear: "rgba(239,68,68,0.12)" };
+
+function RegimeHistoryChart() {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getRegimeHistory(252)
+      .then((d) => setData(d || []))
+      .catch(() => setData([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="animate-fadeUp opacity-0 mt-4" style={{ animationDelay: "400ms" }}>
+        <div className="h-40 bg-gray-100 animate-pulse rounded-xl" />
+      </div>
+    );
+  }
+  if (!data.length) return null;
+
+  const sampled = data.filter((_, i) => i % 3 === 0 || i === data.length - 1);
+
+  return (
+    <div className="animate-fadeUp opacity-0 mt-4" style={{ animationDelay: "400ms" }}>
+      <Card className="p-5">
+        <h2 className="text-[15px] font-sans font-semibold text-gray-900 mb-1">Market Regime - SPY</h2>
+        <p className="text-xs text-gray-400 mb-3 font-mono">Bull / Sideways / Bear - last 252 trading days</p>
+        <ResponsiveContainer width="100%" height={160}>
+          <AreaChart data={sampled} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+            <defs>
+              {["bull", "sideways", "bear"].map((r) => (
+                <linearGradient key={r} id={`grad-${r}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={REGIME_COLORS[r]} stopOpacity={0.3} />
+                  <stop offset="95%" stopColor={REGIME_COLORS[r]} stopOpacity={0.0} />
+                </linearGradient>
+              ))}
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+            <XAxis dataKey="date" tick={{ fontSize: 9 }} tickFormatter={(d) => d?.slice(0, 7)} />
+            <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => `$${v.toFixed(0)}`} />
+            <Tooltip
+              formatter={(v, name) => [name === "close" ? `$${v.toFixed(2)}` : v, name]}
+              labelFormatter={(l) => `Date: ${l}`}
+            />
+            <Area
+              type="monotone"
+              dataKey="close"
+              stroke="#6366f1"
+              fill="url(#grad-bull)"
+              dot={false}
+              strokeWidth={1.5}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+        <div className="flex gap-4 mt-2 text-xs font-mono">
+          {["bull", "sideways", "bear"].map((r) => (
+            <span key={r} className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full inline-block" style={{ background: REGIME_COLORS[r] }} />
+              <span className="capitalize text-gray-500">{r}</span>
+            </span>
+          ))}
+        </div>
+      </Card>
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -6,9 +6,9 @@ from pydantic import BaseModel, Field
 class BacktestRequest(BaseModel):
     portfolio_id: str
     lookback_years: int = Field(default=3, ge=1, le=5)
-    rebalance: str = Field(default="monthly")  # "weekly", "monthly", "quarterly"
+    rebalance: Literal["weekly", "monthly", "quarterly"] = Field(default="monthly")
     risk_tolerance: float = Field(default=0.5, ge=0.0, le=1.0)
-    cost_bps: int = Field(default=10)
+    cost_bps: int = Field(default=10, ge=0, le=200)
     use_ml: bool = Field(default=False)
     use_regime: bool = Field(default=True)
 

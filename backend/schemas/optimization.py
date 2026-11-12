@@ -56,7 +56,15 @@ class OptimizationRequest(BaseModel):
     constraints: PortfolioConstraints | None = None
     user_views: list[UserView] = Field(default_factory=list)
     use_regime_scaling: bool = True
-    use_lstm_forecasts: bool = True
+    use_lstm_forecasts: bool = True  # legacy name kept for backward compat
+    use_ml_forecast: bool | None = None  # new canonical name; overrides use_lstm_forecasts when set
+
+    @model_validator(mode="after")
+    def resolve_ml_toggle(self) -> "OptimizationRequest":
+        # use_ml_forecast wins if explicitly provided; fall back to use_lstm_forecasts
+        if self.use_ml_forecast is None:
+            self.use_ml_forecast = self.use_lstm_forecasts
+        return self
 
 
 class AssetWeight(BaseModel):
@@ -75,6 +83,30 @@ class FrontierPoint(BaseModel):
     weights: dict[str, float]
 
 
+class AssetDiagnostics(BaseModel):
+    ticker: str
+    asset_class: str
+    equilibrium_return_annual: float
+    historical_return_annual: float
+    ml_return_annual: float
+    momentum_return_annual: float
+    blended_return_annual: float
+
+
+class RegimeProbabilities(BaseModel):
+    bull: float
+    sideways: float
+    bear: float
+    current_regime: str
+
+
+class OptimizationDiagnostics(BaseModel):
+    per_asset: list[AssetDiagnostics]
+    regime_probabilities: RegimeProbabilities
+    model_kind: str
+    ml_weight_used: float
+
+
 class OptimizationResult(BaseModel):
     portfolio_id: uuid.UUID
     regime: str
@@ -86,3 +118,4 @@ class OptimizationResult(BaseModel):
     sharpe_ratio: float
     efficient_frontier: list[FrontierPoint]
     rebalance_trades: list[AssetWeight]
+    diagnostics: OptimizationDiagnostics | None = None

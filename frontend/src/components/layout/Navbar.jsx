@@ -13,6 +13,7 @@ import Badge from "../ui-qp/Badge";
 
 const links = [
   { to: "/dashboard", label: "Dashboard" },
+  { to: "/backtest", label: "Backtest" },
   { to: "/optimize", label: "Optimize" },
   { to: "/risk", label: "Risk" },
   { to: "/analytics", label: "Analytics" },

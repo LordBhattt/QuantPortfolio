@@ -1,0 +1,23 @@
+{
+  "model_kind": "gbm",
+  "train_end_date": "2026-11-13",
+  "oos_mean_ic": 0.01727381454326602,
+  "oos_ic_tstat": 0.6101285516574231,
+  "oos_ic_std": 0.2500427145738306,
+  "baseline_ic": 0.0,
+  "n_eval_steps": 78,
+  "gate_passed": false,
+  "feature_names": [
+    "mom_1m",
+    "mom_3m",
+    "mom_6m",
+    "mom_12m",
+    "vol_21d",
+    "vol_63d",
+    "drawdown_252d",
+    "rsi_14",
+    "volume_zscore",
+    "market_return_21d"
+  ],
+  "universe_size": 23
+}

@@ -1,4 +1,7 @@
 import { useMemo, useState } from "react";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid,
+} from "recharts";
 
 import FrontierScatter from "../components/charts/FrontierScatter";
 import WeightsBar from "../components/charts/WeightsBar";
@@ -78,7 +81,7 @@ export default function Optimize() {
               <div className="h-px bg-black/[0.06]" />
 
               <div className="space-y-1">
-                <Toggle checked={useLstm} onCheckedChange={setUseLstm} label="LSTM Forecasts" hint="Use learned return priors" />
+                <Toggle checked={useLstm} onCheckedChange={setUseLstm} label="ML Forecast" hint="Use learned return priors" />
                 <Toggle checked={useRegime} onCheckedChange={setUseRegime} label="Regime Scaling" hint="Adjust covariance by regime" />
               </div>
 
@@ -141,6 +144,83 @@ export default function Optimize() {
           </Card>
         </div>
       )}
+
+      {result?.diagnostics && (
+        <DiagnosticsSection diagnostics={result.diagnostics} />
+      )}
     </PageWrapper>
+  );
+}
+
+function DiagnosticsSection({ diagnostics }) {
+  const { per_asset, regime_probabilities, model_kind, ml_weight_used } = diagnostics;
+
+  // Build grouped bar chart data
+  const chartData = (per_asset || []).map((a) => ({
+    ticker: a.ticker,
+    Equilibrium: +(a.equilibrium_return_annual * 100).toFixed(1),
+    Historical: +(a.historical_return_annual * 100).toFixed(1),
+    ML: +(a.ml_return_annual * 100).toFixed(1),
+    Momentum: +(a.momentum_return_annual * 100).toFixed(1),
+    Blended: +(a.blended_return_annual * 100).toFixed(1),
+  }));
+
+  const modelBadge = {
+    gbm: { label: "GBM model", color: "bg-indigo-100 text-indigo-700" },
+    momentum: { label: "Momentum model", color: "bg-blue-100 text-blue-700" },
+    lstm: { label: "LSTM model", color: "bg-purple-100 text-purple-700" },
+    none: { label: "ML not used", color: "bg-gray-100 text-gray-500" },
+  }[model_kind || "none"] || { label: "ML not used", color: "bg-gray-100 text-gray-500" };
+
+  const { bull = 0.33, sideways = 0.34, bear = 0.33, current_regime = "sideways" } = regime_probabilities || {};
+
+  return (
+    <div className="mt-4 space-y-4">
+      <Card className="p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-foreground">Why This Allocation</h2>
+          <span className={`text-xs px-2 py-0.5 rounded-full font-mono ${modelBadge.color}`}>
+            Using: {modelBadge.label}
+          </span>
+        </div>
+
+        {/* Regime probability bar */}
+        <div className="mb-5">
+          <p className="text-xs text-gray-500 mb-1">Market Regime Probabilities</p>
+          <div className="flex h-5 rounded overflow-hidden text-xs font-mono">
+            <div style={{ width: `${bull * 100}%` }} className="bg-emerald-400 flex items-center justify-center text-white">
+              {bull > 0.1 ? `Bull ${(bull * 100).toFixed(0)}%` : ""}
+            </div>
+            <div style={{ width: `${sideways * 100}%` }} className="bg-amber-300 flex items-center justify-center text-gray-800">
+              {sideways > 0.1 ? `Side ${(sideways * 100).toFixed(0)}%` : ""}
+            </div>
+            <div style={{ width: `${bear * 100}%` }} className="bg-red-400 flex items-center justify-center text-white">
+              {bear > 0.1 ? `Bear ${(bear * 100).toFixed(0)}%` : ""}
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 mt-1">Current regime: <span className="font-mono font-semibold capitalize">{current_regime}</span></p>
+        </div>
+
+        {/* Return component bar chart */}
+        {chartData.length > 0 && (
+          <div>
+            <p className="text-xs text-gray-500 mb-2">Expected Return Components (annual %)</p>
+            <ResponsiveContainer width="100%" height={Math.max(220, chartData.length * 50)}>
+              <BarChart data={chartData} margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="ticker" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}%`} />
+                <Tooltip formatter={(v) => [`${v}%`]} />
+                <Legend />
+                <Bar dataKey="Equilibrium" fill="#6366f1" radius={[2, 2, 0, 0]} />
+                <Bar dataKey="Historical" fill="#10b981" radius={[2, 2, 0, 0]} />
+                <Bar dataKey="ML" fill="#f59e0b" radius={[2, 2, 0, 0]} />
+                <Bar dataKey="Momentum" fill="#8b5cf6" radius={[2, 2, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }
