@@ -56,13 +56,18 @@ React/Vite frontend (SPA)
 | Alert notification system | ✅ Fully working | CRUD for alerts, auto-generated on holding change drift, navbar badge in frontend |
 | Background re-optimization | ✅ Fully working | `BackgroundTasks` re-optimizes after every holding add/delete, stores drift alerts |
 | HMM regime detector | ✅ Fully working | Trained on SPY, 3-signal composite (HMM 50%, vol 30%, trend 20%), with GMM fallback |
-| Momentum forecaster (sklearn) | ✅ Fully working | `momentum_model.pkl` present in `models/`, loaded by `ReturnForecaster.load()` |
-| LSTM forecaster (PyTorch) | ✅ Weights present | `lstm_latest.pt` exists; loaded on startup; offline training via `ml/trainer.py` |
+| Momentum forecaster (sklearn) | ✅ Loaded | `momentum_model.pkl` present; OOS IC = 0.0177, t = 0.63 (noise level per Phase 1 eval) |
+| LSTM forecaster (PyTorch) | ⚠️ Flawed training | `lstm_latest.pt` exists but trains on z-scored price levels (not returns); output * 252 is wrong units for annual return; kept for reference, not used in production |
+| GBM forecaster (HistGradientBoosting) | ✅ Loaded, gate off | `ml_forecaster_v2.joblib` saved; OOS IC = 0.0173, t = 0.61; gate threshold (IC > 0.02, t > 2) not passed; BL weight = 0; UI shows "ML not used" |
+| Backtest Lab | ✅ Fully working | POST /api/v1/backtest/; walk-forward no-lookahead; 6 strategies; equity curves, drawdown, weights history; Redis cache 1h; rate limit 3/min |
+| Stress Test | ✅ Fully working | GET /api/v1/risk/{id}/stress (3 scenarios) + POST custom shock; proxy fallback for missing history; FX impact |
+| Regime history endpoint | ✅ Fully working | GET /api/v1/risk/regime/history; SPY close with per-day HMM regime label |
+| Optimization diagnostics | ✅ Fully working | Optional `diagnostics` field in OptimizationResult with per-asset return components and regime probabilities |
 | Scheduled jobs | ✅ Fully working | 5 cron jobs: hourly cache flush, weekly regime refit, monthly LSTM reminder, market-hours monitor, EOD monitor |
 | Docker deployment | ✅ Fully working | docker-compose with Postgres 16, Redis 7, FastAPI, nginx-fronted Vite build |
 | Database migrations | ✅ Fully working | 4 Alembic migrations: initial schema, investor profiles, monitoring columns, alerts |
 | SQLite fallback | ✅ Fully working | If Postgres is unreachable, lifespan auto-switches to `aiosqlite` at project root |
-| Frontend (all pages) | ✅ Fully working | Dashboard, Holdings, Optimize, Risk, Analytics, Onboarding, Login, Register |
+| Frontend (all pages) | ✅ Fully working | Dashboard, Holdings, Optimize, Risk, Analytics, Backtest, Onboarding, Login, Register |
 | Frontend tests | ⚠️ Minimal | Vitest wired, `portfolioMappers.test.ts` exists, but no page/component tests |
 | Backend tests | ✅ Good coverage | 16 test files covering quant modules, services, routers, and integration |
 | Rate limiting | ✅ Wired | slowapi on optimize endpoint (5/min); limiter middleware installed globally |
@@ -87,7 +92,7 @@ React/Vite frontend (SPA)
 | Database | PostgreSQL 16 (primary) with SQLAlchemy async engine + Alembic; SQLite via aiosqlite (fallback) |
 | Cache | Redis 7 via `redis.asyncio`, with transparent in-memory dict fallback |
 | Quant / math | NumPy, Pandas, SciPy (implicit via sklearn), scikit-learn (Ledoit-Wolf, GMM), CVXPY, hmmlearn, statsmodels, joblib |
-| ML | PyTorch (LSTM), scikit-learn (momentum model) |
+| ML | scikit-learn HistGradientBoostingRegressor (GBM forecaster v2), scikit-learn (momentum model), PyTorch (LSTM, legacy) |
 | Auth | python-jose (JWT), Passlib (bcrypt) |
 | Data sources | Yahoo Finance v8 chart API, CoinGecko v3, AMFI mutual fund NAV, Ken French data library, NSE equity quotes, Open Exchange Rates (FX fallback) |
 | Reliability | httpx (async HTTP), tenacity (retry with exponential backoff) |

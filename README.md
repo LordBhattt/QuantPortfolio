@@ -24,8 +24,24 @@ In plain language: you tell the app what you own, it fetches market history, con
   - constrained mean-variance optimization
   - efficient frontier generation
   - optional user views
-  - optional LSTM-based forecasts
+  - optional ML-based return forecasts (GBM model, with gate-based enable)
   - optional regime-aware covariance scaling
+  - "Why this allocation" diagnostics: per-asset equilibrium, historical, ML, and momentum return components
+  - bull/sideways/bear regime probability bar
+  - model badge showing which ML backend ran or "ML not used"
+- Backtest Lab page at /backtest with:
+  - walk-forward backtest with no lookahead bias
+  - six strategies: Optimized, Equal Weight, Buy and Hold, Min Variance, SPY, NIFTY
+  - multi-line equity curves, drawdown underwater chart, stacked weights-over-time chart
+  - metrics comparison table with best column highlighted
+  - headline card in plain words, red when optimizer loses
+  - turnover costs in basis points
+  - 1-hour Redis cache, rate limited 3 requests per minute
+- Stress Test section on the Risk page with:
+  - three historical scenarios: Global Financial Crisis (2008-09 to 2009-03), COVID Crash (2020-02 to 2020-03), 2022 Rate Hike Cycle (2022-01 to 2022-10)
+  - proxy fallback for holdings with no data in the scenario window
+  - custom shock sliders for equities, crypto, gold, bonds, INR move
+  - per-holding impact bar chart, live slider updates
 - Risk page with:
   - VaR and CVaR
   - max drawdown
@@ -366,11 +382,14 @@ All routes currently live under `/api/v1`.
 
 ### Quant endpoints
 
-- `POST /api/v1/optimize/`
-- `GET /api/v1/risk/{portfolio_id}`
-- `GET /api/v1/risk/{portfolio_id}/monte-carlo`
-- `GET /api/v1/analytics/{portfolio_id}`
-- `GET /api/v1/analytics/{portfolio_id}/factors`
+- `GET /api/v1/risk/{portfolio_id}` risk metrics
+- `GET /api/v1/risk/{portfolio_id}/monte-carlo` Monte Carlo paths
+- `GET /api/v1/risk/{portfolio_id}/stress` historical stress scenarios
+- `POST /api/v1/risk/{portfolio_id}/stress/custom` custom shock
+- `GET /api/v1/risk/regime/history` SPY close with HMM regime labels
+- `GET /api/v1/analytics/{portfolio_id}` analytics and attribution
+- `GET /api/v1/analytics/{portfolio_id}/factors` Fama-French 5-factor
+- `POST /api/v1/backtest/` walk-forward backtest
 
 ### Health
 
@@ -558,10 +577,11 @@ Once both apps are running:
 
 ### UI pages
 
-- `Dashboard`: value, PnL, allocation, performance, risk snapshot, top holdings
+- `Dashboard`: value, PnL, allocation, performance, risk snapshot, top holdings, regime history chart, model track record card linking to Backtest Lab
 - `Holdings`: search, filter, add, delete, and inspect positions
-- `Optimize`: set risk tolerance, class constraints, user views, and model toggles
-- `Risk`: inspect VaR/CVaR, Monte Carlo ranges, correlation, and supporting ratios
+- `Backtest`: walk-forward backtest lab with equity curves, metrics table, drawdown chart, weights history
+- `Optimize`: set risk tolerance, class constraints, user views, ML Forecast toggle, "Why this allocation" diagnostics chart, regime probability bar, model badge
+- `Risk`: inspect VaR/CVaR, Monte Carlo ranges, correlation, Stress Test scenarios, custom shock sliders
 - `Analytics`: inspect factor exposure plus return/risk attribution
 
 ## Scheduled Jobs
@@ -586,6 +606,18 @@ There are two seeding paths:
 
 That means the app is usable immediately after startup, but you can expand the available search universe later if you want.
 
+### Demo portfolio seeding
+
+To create a demo user and a realistic INR 80,000 portfolio for the invigilator demo, run:
+
+```bash
+python backend/scripts/seed_demo_portfolio.py
+```
+
+This creates demo@quantportfolio.in / Demo@1234 and seeds one holding per asset class
+with avg_buy_price set to the real historical close from 12 months ago (fetched via
+yfinance), so the Dashboard P&L reflects real price movement since that date.
+
 ## Testing
 
 ### Backend tests
@@ -602,6 +634,10 @@ Current backend tests cover:
 - Monte Carlo output shape
 - Fama-French regression output
 - asset router behavior
+- stress test scenarios and proxy fallback
+- backtest no-lookahead proof (changing future prices does not change earlier rebalance weights)
+- backtest metrics on known toy series
+- schema validation for backtest and stress endpoints
 
 ### Frontend tests
 
