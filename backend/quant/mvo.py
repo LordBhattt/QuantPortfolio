@@ -29,10 +29,31 @@ def constrained_mvo(
     objective = cp.Maximize(risk_tolerance * portfolio_return - (1.0 - risk_tolerance) * portfolio_variance)
     constraints_list = [cp.sum(weights) == 1, weights >= 0]
 
-    # Per-asset cap to prevent concentration
-    cap = min(max_single_asset_weight, 1.0)
-    if n_assets > 1:
-        constraints_list.append(weights <= cap)
+    # Per-asset cap to prevent concentration (only apply if mathematically feasible)
+    if max_single_asset_weight is not None and max_single_asset_weight < 1.0:
+        min_feasible_cap = 1.0 / n_assets
+        if max_single_asset_weight >= min_feasible_cap:
+            cap = min(max_single_asset_weight, 1.0)
+            if constraints is None:
+                constraints_list.append(weights <= cap)
+            else:
+                can_apply = True
+                class_map = constraints.model_dump()
+                aliases = {
+                    "stocks": "stock",
+                    "crypto": "crypto",
+                    "gold": "gold",
+                    "mf_etf": "mf_etf",
+                    "bonds": "bond",
+                }
+                for schema_name, bounds in class_map.items():
+                    asset_class = aliases.get(schema_name)
+                    matching = [idx for idx, name in enumerate(asset_classes) if name == asset_class]
+                    if len(matching) == 1 and bounds["min"] > cap:
+                        can_apply = False
+                        break
+                if can_apply:
+                    constraints_list.append(weights <= cap)
 
     if constraints is not None:
         constraints_list.extend(_build_class_constraints(weights, asset_classes, constraints))

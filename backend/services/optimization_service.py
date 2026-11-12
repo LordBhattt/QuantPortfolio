@@ -1,5 +1,5 @@
 """
-Optimization pipeline — institutional grade:
+Optimization pipeline: institutional grade:
 1. Load portfolio holdings
 2. Fetch price history + compute returns
 3. Detect market regime (HMM + vol + trend)
@@ -11,9 +11,11 @@ Optimization pipeline — institutional grade:
 
 import asyncio
 import logging
+from typing import Any
 from uuid import UUID
 
 import numpy as np
+import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import get_settings
@@ -28,6 +30,7 @@ from backend.quant.covariance import compute_covariance, scale_covariance_by_reg
 from backend.quant.data_fetcher import DataFetcher
 from backend.quant.expected_returns import (
     blend_expected_returns,
+    compute_equilibrium_returns,
     compute_market_weights_from_volatility,
 )
 from backend.quant.forecaster import ReturnForecaster
@@ -51,6 +54,140 @@ def init_ml_models(regime_detector: RegimeDetector, return_forecaster: ReturnFor
     _return_forecaster = return_forecaster
     # Share regime detector with risk service
     set_regime_detector(regime_detector)
+
+
+def get_ml_models() -> tuple[RegimeDetector | None, ReturnForecaster | None]:
+    return _regime_detector, _return_forecaster
+
+
+def optimize_from_returns(
+    returns_df: pd.DataFrame,
+    tickers: list[str],
+    asset_classes: list[str],
+    constraints: Any,
+    risk_tolerance: float,
+    use_regime: bool,
+    regime_detector: Any,
+    ml_forecasts: np.ndarray | None,
+    use_ml: bool,
+    user_views: list | None = None,
+    risk_free_rate: float | None = None,
+) -> dict:
+    """
+    Pure function: given aligned returns DataFrame, run the optimization pipeline.
+    Returns dict with keys: weights (dict[str,float]), regime_state (int),
+    expected_returns_annual (np.ndarray), cov_annual (np.ndarray).
+    """
+    rf = risk_free_rate if risk_free_rate is not None else settings.RISK_FREE_RATE
+
+    # Resolve constraints
+    resolved_constraints = constraints
+    if isinstance(constraints, dict):
+        resolved_constraints = PortfolioConstraints(**constraints)
+
+    # 1. Detect regime
+    regime_state = 1
+    regime_probs = np.array([0.0, 1.0, 0.0])
+    regime_info: RegimeState | None = None
+
+    if use_regime and regime_detector is not None and getattr(regime_detector, "is_fitted", False):
+        market_proxy = returns_df.iloc[:, 0]
+        try:
+            regime_info = regime_detector.detect_regime(market_proxy)
+            regime_state = regime_info.state
+            regime_probs = regime_info.probabilities
+        except Exception:
+            regime_state = 1
+            regime_probs = np.array([0.0, 1.0, 0.0])
+
+    # 2. Covariance with shrinkage + regime scaling
+    cov = compute_covariance(returns_df, "ledoit_wolf", True, 252)
+    cov = shrink_volatility(cov, asset_classes, True, 252)
+
+    if regime_info is not None:
+        cov = scale_covariance_by_regime(
+            cov,
+            regime_state,
+            regime_info.cov_diag_scale,
+            regime_info.cov_offdiag_scale,
+        )
+
+    # 3. Expected returns
+    market_weights = compute_market_weights_from_volatility(cov)
+    ml_forecasts_annual: np.ndarray | None = None
+    if use_ml and ml_forecasts is not None:
+        ml_forecasts_annual = ml_forecasts
+
+    mu_daily, diagnostics = blend_expected_returns(
+        cov_annual=cov,
+        market_weights=market_weights,
+        returns_df=returns_df,
+        asset_classes=asset_classes,
+        regime_state=regime_state,
+        ml_forecasts=ml_forecasts_annual,
+        base_risk_aversion=2.5,
+    )
+    mu_annual = mu_daily * 252
+
+    # 4. User views via Black-Litterman
+    optimization_cov = cov
+    mu = mu_annual
+
+    if user_views:
+        user_view_rows: list[np.ndarray] = []
+        user_view_returns: list[float] = []
+        view_confidences: list[float] = []
+        ticker_index = {ticker: index for index, ticker in enumerate(tickers)}
+
+        for view in user_views:
+            if view.ticker not in ticker_index:
+                continue
+            row = np.zeros(len(tickers))
+            row[ticker_index[view.ticker]] = 1.0
+            user_view_rows.append(row)
+            user_view_returns.append(float(view.expected_return))
+            view_confidences.append(float(view.confidence))
+
+        if user_view_rows:
+            P = np.array(user_view_rows)
+            Q = np.array(user_view_returns)
+            confidences = np.array(view_confidences)
+            omega = build_omega_from_confidence(P=P, cov=cov, tau=0.025, confidences=confidences)
+            risk_aversion = 2.5 * (regime_info.risk_aversion_mult if regime_info else 1.0)
+            bl_inputs = BLInputs(
+                cov=cov,
+                market_weights=market_weights,
+                risk_aversion=risk_aversion,
+                tau=0.025,
+                P=P,
+                Q=Q,
+                Omega=omega,
+            )
+            mu = black_litterman_returns(bl_inputs)
+            posterior_delta = posterior_covariance(bl_inputs)
+            optimization_cov = cov + posterior_delta
+
+    # 5. Constrained MVO
+    weight_map = constrained_mvo(
+        mu,
+        optimization_cov,
+        tickers,
+        asset_classes,
+        resolved_constraints,
+        risk_tolerance,
+        rf,
+    )
+
+    return {
+        "weights": weight_map,
+        "regime_state": regime_state,
+        "regime_probs": regime_probs,
+        "regime_info": regime_info,
+        "expected_returns_annual": mu,
+        "cov_annual": cov,
+        "optimization_cov": optimization_cov,
+        "diagnostics": diagnostics,
+    }
 
 
 async def run_optimization(
@@ -110,36 +247,6 @@ async def run_optimization(
     if returns_df.empty or len(returns_df.columns) == 0:
         raise AppError("Optimization failed", "insufficient_returns", "Unable to build aligned return matrix", 400)
 
-    # ── 1. Detect regime ──
-    regime_state = 1
-    regime_probs = np.array([0.0, 1.0, 0.0])
-    regime_info: RegimeState | None = None
-
-    if request.use_regime_scaling and _regime_detector is not None and _regime_detector.is_fitted:
-        market_proxy = returns_df.iloc[:, 0]
-        try:
-            regime_info = await loop.run_in_executor(None, _regime_detector.detect_regime, market_proxy)
-            regime_state = regime_info.state
-            regime_probs = regime_info.probabilities
-        except Exception:
-            regime_state = 1
-            regime_probs = np.array([0.0, 1.0, 0.0])
-
-    regime_label = _regime_detector.regime_label(regime_state) if _regime_detector else "sideways"
-
-    # ── 2. Covariance with shrinkage + regime scaling ──
-    cov = await loop.run_in_executor(None, compute_covariance, returns_df, "ledoit_wolf", True, 252)
-    cov = await loop.run_in_executor(None, shrink_volatility, cov, asset_classes, True, 252)
-
-    if regime_info is not None:
-        cov = await loop.run_in_executor(
-            None, scale_covariance_by_regime, cov, regime_state,
-            regime_info.cov_diag_scale, regime_info.cov_offdiag_scale,
-        )
-
-    # ── 3. Compute expected returns via institutional engine ──
-    market_weights = compute_market_weights_from_volatility(cov)
-
     # Gather ML forecasts if available
     ml_forecasts_annual: np.ndarray | None = None
     if request.use_lstm_forecasts and _return_forecaster is not None and _return_forecaster.model is not None:
@@ -153,81 +260,49 @@ async def run_optimization(
                 ml_list.append(float(pred))
             except Exception:
                 ml_list.append(None)
-        # Fill None with equilibrium (will be handled by blend_expected_returns)
+        # Fill None with equilibrium
         if any(v is not None for v in ml_list):
-            from backend.quant.expected_returns import compute_equilibrium_returns
-            risk_aversion = 2.5 * (regime_info.risk_aversion_mult if regime_info else 1.0)
-            eq_returns = compute_equilibrium_returns(cov, market_weights, risk_aversion)
+            raw_cov = compute_covariance(returns_df, "ledoit_wolf", True, 252)
+            m_weights = compute_market_weights_from_volatility(raw_cov)
+            eq_returns = compute_equilibrium_returns(raw_cov, m_weights, 2.5)
             ml_forecasts_annual = np.array([
                 v if v is not None else float(eq_returns[i])
                 for i, v in enumerate(ml_list)
             ])
 
-    mu_daily, diagnostics = blend_expected_returns(
-        cov_annual=cov,
-        market_weights=market_weights,
-        returns_df=returns_df,
-        asset_classes=asset_classes,
-        regime_state=regime_state,
-        ml_forecasts=ml_forecasts_annual,
-        base_risk_aversion=2.5,
-    )
-
-    # Convert daily mu to annual for BL/MVO (they expect annualised)
-    mu_annual = mu_daily * 252
-
-    # ── 4. User views via Black-Litterman ──
-    user_view_rows: list[np.ndarray] = []
-    user_view_returns: list[float] = []
-    view_confidences: list[float] = []
-    ticker_index = {ticker: index for index, ticker in enumerate(tickers)}
-
-    for view in request.user_views:
-        if view.ticker not in ticker_index:
-            continue
-        row = np.zeros(len(tickers))
-        row[ticker_index[view.ticker]] = 1.0
-        user_view_rows.append(row)
-        user_view_returns.append(float(view.expected_return))
-        view_confidences.append(float(view.confidence))
-
-    P = np.array(user_view_rows) if user_view_rows else None
-    Q = np.array(user_view_returns) if user_view_returns else None
-    confidences = np.array(view_confidences) if view_confidences else None
-    omega = (
-        build_omega_from_confidence(P=P, cov=cov, tau=0.025, confidences=confidences)
-        if P is not None and confidences is not None
-        else None
-    )
-
-    if P is not None:
-        # Use BL to blend user views with our expected returns
-        bl_inputs = BLInputs(
-            cov=cov,
-            market_weights=market_weights,
-            risk_aversion=2.5 * (regime_info.risk_aversion_mult if regime_info else 1.0),
-            tau=0.025,
-            P=P, Q=Q, Omega=omega,
-        )
-        mu = await loop.run_in_executor(None, black_litterman_returns, bl_inputs)
-        posterior_delta = await loop.run_in_executor(None, posterior_covariance, bl_inputs)
-        optimization_cov = cov + posterior_delta
-    else:
-        mu = mu_annual
-        optimization_cov = cov
-
-    # ── 5. MVO ──
     constraints = request.constraints or PortfolioConstraints(**portfolio["constraints"])
-    weight_map = await loop.run_in_executor(
-        None, constrained_mvo, mu, optimization_cov, tickers, asset_classes,
-        constraints, request.risk_tolerance, settings.RISK_FREE_RATE,
+
+    # Call pure function optimize_from_returns in executor
+    opt_result = await loop.run_in_executor(
+        None,
+        lambda: optimize_from_returns(
+            returns_df=returns_df,
+            tickers=tickers,
+            asset_classes=asset_classes,
+            constraints=constraints,
+            risk_tolerance=request.risk_tolerance,
+            use_regime=request.use_regime_scaling,
+            regime_detector=_regime_detector,
+            ml_forecasts=ml_forecasts_annual,
+            use_ml=request.use_lstm_forecasts,
+            user_views=request.user_views,
+        ),
     )
+
+    weight_map = opt_result["weights"]
+    regime_state = opt_result["regime_state"]
+    regime_probs = opt_result["regime_probs"]
+    mu = opt_result["expected_returns_annual"]
+    optimization_cov = opt_result["optimization_cov"]
+
+    regime_label = _regime_detector.regime_label(regime_state) if _regime_detector else "sideways"
+
     frontier = await loop.run_in_executor(
         None, efficient_frontier, mu, optimization_cov, tickers, asset_classes,
         constraints, 50, settings.RISK_FREE_RATE,
     )
 
-    # ── 6. Compute current values + rebalancing ──
+    # Compute current values + rebalancing
     live_prices_inr = (
         await fetcher.get_latest_prices_in_inr(
             [
