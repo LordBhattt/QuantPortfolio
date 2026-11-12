@@ -8,7 +8,9 @@ from backend.database import get_db
 from backend.dependencies import get_current_user, get_fetcher
 from backend.quant.data_fetcher import DataFetcher
 from backend.schemas.risk import MonteCarloResult, RiskMetrics
+from backend.schemas.stress import CustomShockRequest, StressTestResponse
 from backend.services.risk_service import compute_risk_metrics, run_monte_carlo
+from backend.services.stress_service import run_custom_stress, run_stress_test
 
 router = APIRouter(prefix="/api/v1/risk", tags=["risk"])
 
@@ -39,4 +41,36 @@ async def get_monte_carlo(
         fetcher=fetcher,
         n_paths=n_paths,
         horizon_days=horizon_days,
+    )
+
+
+@router.get("/{portfolio_id}/stress", response_model=StressTestResponse)
+async def get_stress_test(
+    portfolio_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    fetcher: DataFetcher = Depends(get_fetcher),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> StressTestResponse:
+    return await run_stress_test(
+        portfolio_id=portfolio_id,
+        user_id=current_user.id,
+        db=db,
+        fetcher=fetcher,
+    )
+
+
+@router.post("/{portfolio_id}/stress/custom")
+async def custom_stress_test(
+    portfolio_id: UUID,
+    shock: CustomShockRequest,
+    db: AsyncSession = Depends(get_db),
+    fetcher: DataFetcher = Depends(get_fetcher),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> dict:
+    return await run_custom_stress(
+        portfolio_id=portfolio_id,
+        user_id=current_user.id,
+        db=db,
+        fetcher=fetcher,
+        shock=shock,
     )

@@ -14,6 +14,14 @@ def fama_french_regression(
     portfolio_id: uuid.UUID,
 ) -> FactorExposure:
     try:
+        try:
+            import scipy._lib._util as _scipy_util
+            if not hasattr(_scipy_util, "_lazywhere") and hasattr(_scipy_util, "_lazyselect"):
+                _scipy_util._lazywhere = lambda cond, arrays, f, fillvalue=None, f2=None: _scipy_util._lazyselect(
+                    [cond, ~cond], [f, (lambda *x: fillvalue) if f2 is None else f2], arrays
+                )
+        except Exception:
+            pass
         import statsmodels.api as sm
     except ImportError as exc:
         raise RuntimeError("statsmodels is required for factor decomposition") from exc
