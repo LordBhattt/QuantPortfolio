@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     MONTE_CARLO_HORIZON_DAYS: int = 252
     CVAR_CONFIDENCE: float = 0.95
 
+    # Feature flags and versioning
+    EXPECTED_RETURN_FLOOR_ENABLED: bool = True
+    ML_FORECASTER_VERSION: str = "gbm"  # "momentum", "gbm", "lstm"
+    BACKTEST_CACHE_TTL_SECONDS: int = 3600
+
     @field_validator("DEBUG", mode="before")
     @classmethod
     def normalize_debug(cls, value: object) -> bool | object:
