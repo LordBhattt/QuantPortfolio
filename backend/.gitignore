@@ -3,5 +3,6 @@ __pycache__/
 .pytest_cache/
 .coverage
 .env
+backend/.env
 *.log
 ml/weights/*.pt
