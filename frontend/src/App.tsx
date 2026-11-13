@@ -21,6 +21,8 @@ const Optimize = lazy(() => import("./pages/Optimize.jsx"));
 const Risk = lazy(() => import("./pages/Risk.jsx"));
 const Analytics = lazy(() => import("./pages/Analytics.jsx"));
 const Holdings = lazy(() => import("./pages/Holdings.jsx"));
+const Profile = lazy(() => import("./pages/Profile.jsx"));
+const Settings = lazy(() => import("./pages/Settings.jsx"));
 const Login = lazy(() => import("./pages/Login.jsx"));
 const Register = lazy(() => import("./pages/Register.jsx"));
 const Onboarding = lazy(() => import("./pages/Onboarding.tsx"));
@@ -135,6 +137,8 @@ const App = () => (
             <Route path="risk" element={<Risk />} />
             <Route path="analytics" element={<Analytics />} />
             <Route path="holdings" element={<Holdings />} />
+            <Route path="profile" element={<Profile />} />
+            <Route path="settings" element={<Settings />} />
           </Route>
 
           <Route path="*" element={<NotFound />} />

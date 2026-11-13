@@ -271,10 +271,22 @@ export default function Navbar() {
                 </div>
               </div>
               <div className="border-t border-black/[0.06] my-1" />
-              <button className="w-full text-left px-4 py-2 text-sm font-sans text-gray-700 hover:bg-black/[0.04] transition-colors">
+              <button
+                onClick={() => {
+                  setAccountOpen(false);
+                  navigate("/profile");
+                }}
+                className="w-full text-left px-4 py-2 text-sm font-sans text-gray-700 hover:bg-black/[0.04] transition-colors"
+              >
                 Profile
               </button>
-              <button className="w-full text-left px-4 py-2 text-sm font-sans text-gray-700 hover:bg-black/[0.04] transition-colors">
+              <button
+                onClick={() => {
+                  setAccountOpen(false);
+                  navigate("/settings");
+                }}
+                className="w-full text-left px-4 py-2 text-sm font-sans text-gray-700 hover:bg-black/[0.04] transition-colors"
+              >
                 Settings
               </button>
               <div className="border-t border-black/[0.06] my-1" />
