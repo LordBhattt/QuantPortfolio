@@ -17,6 +17,11 @@ pytest-cache-files-*/
 # ML weights (too large for git)
 backend/ml/weights/*.pt
 
+# Downloaded market and macro data
+backend/data/cache/
+backend/data/macro/
+backend/data/quality_report.json
+
 # Node
 frontend/node_modules/
 frontend/dist/

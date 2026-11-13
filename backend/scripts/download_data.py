@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from datetime import date
 from pathlib import Path
 
@@ -23,7 +24,16 @@ def download_prices(start: str, end: str) -> list[dict]:
     quality: list[dict] = []
     for ticker in UNIVERSE:
         source = PROXIES.get(ticker, ticker)
-        frame = yf.download(source, start=start, end=end, auto_adjust=True, progress=False)
+        frame = pd.DataFrame()
+        for attempt in range(3):
+            try:
+                frame = yf.download(source, start=start, end=end, auto_adjust=True, progress=False)
+                if not frame.empty:
+                    break
+            except Exception as exc:
+                if attempt == 2:
+                    raise RuntimeError(f"Download failed for {ticker}: {exc}") from exc
+            time.sleep(2 ** attempt)
         if frame.empty:
             raise RuntimeError(f"No data returned for {ticker} (source {source})")
         if isinstance(frame.columns, pd.MultiIndex):

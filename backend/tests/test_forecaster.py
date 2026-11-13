@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 import pandas as pd
+import pytest
 
 from backend.quant.forecaster import ReturnForecaster
 
@@ -24,13 +25,10 @@ def _build_price_frame() -> pd.DataFrame:
     return frame
 
 
-def test_return_forecaster_loads_momentum_model_and_predicts() -> None:
+def test_return_forecaster_keeps_failed_ml_gate_disabled() -> None:
     forecaster = ReturnForecaster().load()
 
-    assert forecaster.model_kind == "momentum"
-    assert getattr(forecaster.model, "n_features_in_", None) == 6
-
-    prediction = forecaster.predict(_build_price_frame())
-
-    assert isinstance(prediction, float)
-    assert prediction == prediction
+    assert forecaster.model_kind == "gbm"
+    assert not forecaster._gbm_enabled
+    with pytest.raises(RuntimeError, match="did not pass IC gate"):
+        forecaster.predict(_build_price_frame())

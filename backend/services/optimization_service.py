@@ -37,6 +37,7 @@ from backend.quant.forecaster import ReturnForecaster
 from backend.quant.mvo import constrained_mvo, efficient_frontier
 from backend.quant.regime import RegimeDetector, RegimeState
 from backend.quant.returns import align_returns
+from backend.quant.smart_backtest import SmartConfig, smart_weights
 from backend.schemas.optimization import (
     AssetDiagnostics,
     AssetWeight,
@@ -306,6 +307,16 @@ async def run_optimization(
     )
 
     weight_map = opt_result["weights"]
+    if not request.use_regime_scaling and not request.use_lstm_forecasts and not request.user_views:
+        smart_config = SmartConfig("Inverse Volatility", "inverse_vol")
+        weight_map = smart_weights(
+            returns_df,
+            tickers,
+            asset_classes,
+            constraints,
+            smart_config,
+            lambda frame, names, classes: opt_result["weights"],
+        )
     regime_state = opt_result["regime_state"]
     regime_probs = opt_result["regime_probs"]
     mu = opt_result["expected_returns_annual"]

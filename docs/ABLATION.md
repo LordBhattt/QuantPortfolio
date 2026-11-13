@@ -74,10 +74,10 @@ Config D (floor ON, regime ON, ML OFF) is kept as the default because:
 
 Defaults:
 
-- `use_regime_scaling = True`
+- `use_regime_scaling = False`
 - `EXPECTED_RETURN_FLOOR_ENABLED = True`
 - `ML_FORECASTER_VERSION = "gbm"` (loaded but gate-disabled; shown as "ML not used" in UI)
-- `use_lstm_forecasts = True` (accepted for backward compat; real model is GBM or none)
+- `use_lstm_forecasts = False` (accepted for backward compat; real model is GBM or none)
 
 ---
 

@@ -52,6 +52,8 @@ class ReturnForecaster:
         self._gbm_scaler = None
         self._gbm_enabled = False
         self._gbm_meta: dict = {}
+        self._lstm_mean: np.ndarray | None = None
+        self._lstm_std: np.ndarray | None = None
 
     def load(self, path: str | None = None) -> "ReturnForecaster":
         # Priority 1: GBM model (ml_forecaster_v2.joblib)
@@ -78,15 +80,10 @@ class ReturnForecaster:
                 else:
                     log.warning(
                         "GBM forecaster loaded but DISABLED (IC=%.4f, t=%.2f < thresholds 0.02/2.0). "
-                        "Falling through to momentum model.",
+                        "No return model will be used.",
                         oos_ic, ic_tstat,
                     )
-                    # Still try momentum as fallback
-                    model_path = self._resolve_model_path(path)
-                    if model_path is not None:
-                        self.model = joblib.load(model_path)
-                        self.model_kind = "momentum"
-                        self._gbm_enabled = False
+                    self.model = None
                 return self
             except Exception as exc:
                 log.warning("Failed to load GBM model: %s. Falling through.", exc)
@@ -94,8 +91,9 @@ class ReturnForecaster:
         # Priority 2: momentum .pkl
         model_path = self._resolve_model_path(path)
         if model_path is not None:
-            self.model = joblib.load(model_path)
-            self.model_kind = "momentum"
+            log.warning("Momentum forecaster is available but has no passing production gate; keeping ML disabled")
+            self.model = None
+            self.model_kind = "none"
             return self
 
         # Priority 3: LSTM
@@ -121,6 +119,10 @@ class ReturnForecaster:
         )
         checkpoint = torch.load(weights_path, map_location=self.device)
         model.load_state_dict(checkpoint["model_state"])
+        if checkpoint.get("feature_mean") is None or checkpoint.get("feature_std") is None:
+            raise RuntimeError("LSTM checkpoint lacks train-only feature statistics")
+        self._lstm_mean = np.asarray(checkpoint["feature_mean"], dtype=float)
+        self._lstm_std = np.asarray(checkpoint["feature_std"], dtype=float)
         model.to(self.device)
         model.eval()
         self.model = model
@@ -130,6 +132,8 @@ class ReturnForecaster:
     def predict(self, price_df: pd.DataFrame, asset_class: str | None = None) -> float:
         """Raw ML prediction (annualized, clipped)."""
         if self.model is None:
+            if self.model_kind == "gbm" and not self._gbm_enabled:
+                raise RuntimeError("GBM forecaster did not pass IC gate")
             raise RuntimeError("Model not loaded. Call load() first.")
 
         if self.model_kind == "gbm" and self._gbm_enabled:
@@ -155,8 +159,9 @@ class ReturnForecaster:
         with self._torch.no_grad():
             tensor = self._torch.tensor(features, dtype=self._torch.float32).unsqueeze(0).to(self.device)
             prediction = self.model(tensor)
-            daily_return = float(prediction.squeeze().mean().item())
-        annualized = daily_return * 252
+            normalized_prediction = float(prediction.squeeze().mean().item())
+        daily_return = normalized_prediction * float(self._lstm_std[3]) + float(self._lstm_mean[3])
+        annualized = float(np.exp(daily_return * 252) - 1.0)
         if not np.isfinite(annualized):
             raise ValueError("LSTM forecast is not finite")
         lo, hi = self._clip_bounds(asset_class)
@@ -311,7 +316,12 @@ class ReturnForecaster:
         columns = ["open", "high", "low", "close", "volume"]
         if not set(columns).issubset(frame.columns):
             raise ValueError("price history is missing OHLCV columns")
-        array = frame[columns].tail(settings.LSTM_LOOKBACK_DAYS).astype(float).values
-        mean = array.mean(axis=0)
-        std = array.std(axis=0) + 1e-8
-        return (array - mean) / std
+        prices = frame[columns].astype(float).replace(0.0, np.nan).ffill().dropna()
+        raw = np.column_stack([
+            np.log(prices[column] / prices[column].shift(1))
+            for column in columns[:4]
+        ] + [np.log(prices["volume"] / prices["volume"].shift(1).replace(0.0, np.nan))])
+        raw = pd.DataFrame(raw).replace([np.inf, -np.inf], np.nan).dropna().to_numpy()
+        if self._lstm_mean is None or self._lstm_std is None:
+            raise RuntimeError("LSTM checkpoint lacks train-only feature statistics")
+        return ((raw - self._lstm_mean) / self._lstm_std)[-settings.LSTM_LOOKBACK_DAYS:]

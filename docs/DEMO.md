@@ -61,19 +61,19 @@ Open: http://localhost:5173
 
 The strict 5-year walk-forward evaluation is documented in
 [IMPROVEMENT_REPORT.md](IMPROVEMENT_REPORT.md). QP Smart selected
-**Shrinkage lambda=0 (equal weight)** using data through 2023-04-28; the final
-40% was held out. It did not beat Equal Weight because it is intentionally the
-same weights. No-trade 10% quarterly had the strongest held-out result, but it
-was not promoted because choosing it would look at the holdout.
+**Inverse Volatility** using data through 2023-04-28; the final 40% was held
+out. The held-out result did not beat Equal Weight.
 
 | Strategy | Profit (INR) | Sharpe | Max drawdown |
 |---|---:|---:|---:|
-| QP Smart / Equal Weight | +47,141.66 | +0.1452 | -16.51% |
-| No-trade 10%, quarterly (not selected) | +64,584.94 | +0.3510 | -16.71% |
-| SPY reference | +90,119.12 | — | — |
+| QP Smart / Inverse Volatility | +38,276.24 | +0.0012 | -16.21% |
+| Equal Weight | +47,141.66 | +0.1452 | -16.51% |
+| No-trade 10%, quarterly (not selected) | +69,295.07 | +0.4114 | -14.91% |
+| SPY reference | +90,119.12 | n/a | n/a |
 
-The volatility model was rejected before selection (held-out MAE 0.4796 versus
-0.0503 for trailing volatility).
+The volatility model was rejected before selection (held-out MAE 0.1052 versus
+0.0502 for trailing volatility). The block-bootstrap 95% interval for QP Smart
+versus Equal Weight was [-0.0027, 0.0009], not statistically significant.
 
 #### Previous live 3-year talking points (run 2026-11-13)
 
