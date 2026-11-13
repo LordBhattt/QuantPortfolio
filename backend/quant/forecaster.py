@@ -105,6 +105,8 @@ class ReturnForecaster:
         from backend.ml.lstm_model import LSTMForecaster
 
         weights_path = Path(path or settings.LSTM_WEIGHTS_PATH)
+        if not weights_path.is_absolute():
+            weights_path = backend_root / weights_path
         if not weights_path.is_file():
             raise RuntimeError(f"No pretrained forecaster model found at {weights_path}")
 

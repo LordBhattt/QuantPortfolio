@@ -75,15 +75,18 @@ def train(price_df: pd.DataFrame, epochs: int = 100, lr: float = 1e-3) -> None:
         if (epoch + 1) % 10 == 0:
             print(f"Epoch {epoch + 1}/{epochs} loss={np.mean(losses):.6f}")
 
-    Path(settings.LSTM_WEIGHTS_PATH).parent.mkdir(parents=True, exist_ok=True)
+    weights_path = Path(settings.LSTM_WEIGHTS_PATH)
+    if not weights_path.is_absolute():
+        weights_path = PROJECT_ROOT / "backend" / weights_path
+    weights_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save({
         "model_state": model.state_dict(),
         "feature_mean": mean.tolist(),
         "feature_std": std.tolist(),
         "feature_definition": "daily log OHLCV changes; target is forward close log return",
         "train_rows": int(split),
-    }, settings.LSTM_WEIGHTS_PATH)
-    print(f"Saved weights to {settings.LSTM_WEIGHTS_PATH}")
+    }, weights_path)
+    print(f"Saved weights to {weights_path}")
 
 
 if __name__ == "__main__":
