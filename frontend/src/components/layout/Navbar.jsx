@@ -101,7 +101,7 @@ export default function Navbar() {
   };
 
   return (
-    <nav className="sticky top-0 z-40 h-14 min-w-0 bg-white/90 backdrop-blur-sm border-b border-black/[0.06] flex items-center px-3 sm:px-6 gap-2 sm:gap-6 overflow-hidden">
+    <nav className="sticky top-0 z-50 h-14 min-w-0 bg-white/90 backdrop-blur-sm border-b border-black/[0.06] flex items-center px-3 sm:px-6 gap-2 sm:gap-6">
       <div className="flex min-w-0 shrink items-center gap-2">
         <div className="w-7 h-7 rounded-md bg-gray-900 flex items-center justify-center">
           <span className="text-white font-mono text-xs font-semibold">Q</span>
@@ -119,7 +119,7 @@ export default function Navbar() {
           <ChevronDown className="text-gray-400" />
         </button>
         {portfolioOpen && (
-          <div className="absolute left-0 top-11 w-56 bg-white border border-black/[0.08] rounded-xl shadow-card-hover z-50 py-1.5 animate-fadeUp">
+          <div className="absolute left-0 top-11 w-56 bg-white border border-black/[0.08] rounded-xl shadow-card-hover z-[70] py-1.5 animate-fadeUp">
             {portfoliosLoading && <div className="px-4 py-2 text-sm font-sans text-gray-500">Loading portfolios...</div>}
             {!portfoliosLoading &&
               portfolios.map((portfolio) => (
@@ -178,7 +178,7 @@ export default function Navbar() {
           </button>
 
           {alertsOpen && (
-            <div className="absolute right-0 top-11 z-50 w-[360px] overflow-hidden rounded-2xl border border-black/[0.08] bg-white shadow-card-hover animate-fadeUp">
+            <div className="absolute right-0 top-11 z-[70] w-[360px] overflow-hidden rounded-2xl border border-black/[0.08] bg-white shadow-card-hover animate-fadeUp">
               <div className="flex items-center justify-between border-b border-black/[0.06] px-4 py-3">
                 <div>
                   <div className="text-sm font-semibold text-gray-900">Alerts</div>
@@ -258,7 +258,7 @@ export default function Navbar() {
             <span className="text-primary-foreground font-mono text-xs font-semibold">{initials}</span>
           </button>
           {accountOpen && (
-            <div className="absolute right-0 top-12 w-56 bg-white border border-black/[0.08] rounded-xl shadow-card-hover z-50 py-2 animate-fadeUp">
+            <div className="absolute right-0 top-12 w-56 bg-white border border-black/[0.08] rounded-xl shadow-card-hover z-[70] py-2 animate-fadeUp">
               <div className="px-4 py-2 flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center">
                   <span className="text-white font-mono text-xs font-semibold">{initials}</span>
