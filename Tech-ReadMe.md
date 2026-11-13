@@ -559,7 +559,8 @@ cd backend
 pip install -r requirements.txt
 # Also needed but not in requirements.txt:
 pip install python-dotenv psycopg2-binary
-# Copy .env.example → .env, fill in SECRET_KEY and DATABASE_URL
+# Copy .env.example → .env, generate SECRET_KEY with
+# `python backend/scripts/generate_secret.py`, then fill in DATABASE_URL
 alembic upgrade head  # or skip — tables auto-create on startup
 uvicorn main:app --reload --port 8000
 ```

@@ -30,6 +30,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     environment:
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY using python backend/scripts/generate_secret.py}
       DATABASE_URL: postgresql+asyncpg://quantportfolio:quantportfolio@db:5432/quantportfolio
       REDIS_URL: redis://redis:6379
       ALLOWED_ORIGINS: '["http://localhost:8081","http://127.0.0.1:8081"]'

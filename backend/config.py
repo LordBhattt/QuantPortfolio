@@ -1,8 +1,20 @@
 from functools import lru_cache
 import json
+import logging
+import secrets
 
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+PLACEHOLDER_SECRET_KEYS = frozenset(
+    {
+        "change-me-to-a-long-random-secret",
+        "change-me-to-a-long-random-secret-min-32-chars",
+        "replace-with-a-long-random-secret",
+    }
+)
 
 
 class Settings(BaseSettings):
@@ -14,8 +26,9 @@ class Settings(BaseSettings):
 
     # App
     APP_NAME: str = "QuantPortfolio"
+    APP_ENV: str = "production"
     DEBUG: bool = False
-    SECRET_KEY: str = "change-me-to-a-long-random-secret"
+    SECRET_KEY: str = Field(default="", validate_default=True)
     ALGORITHM: str = "HS256"
     AUTH_COOKIE_NAME: str = "qp_access_token"
     AUTH_COOKIE_PATH: str = "/"
@@ -75,6 +88,29 @@ class Settings(BaseSettings):
             if normalized in {"0", "false", "no", "off", "release", "prod", "production"}:
                 return False
         return value
+
+    @field_validator("SECRET_KEY", mode="after")
+    @classmethod
+    def validate_secret_key(cls, value: str, info: ValidationInfo) -> str:
+        normalized = value.strip()
+        is_placeholder = not normalized or normalized.lower() in PLACEHOLDER_SECRET_KEYS
+        if not is_placeholder:
+            return normalized
+
+        app_env = str(info.data.get("APP_ENV", "")).strip().lower()
+        if app_env == "development":
+            generated = secrets.token_urlsafe(48)
+            logger.warning(
+                "SECRET_KEY was missing or a placeholder; generated a development-only "
+                "secret. Sessions will not survive restarts."
+            )
+            return generated
+
+        raise ValueError(
+            "SECRET_KEY is missing or still a public placeholder. Generate one with "
+            "`python backend/scripts/generate_secret.py` and set it in backend/.env "
+            "or the environment. Set APP_ENV=development only for local development."
+        )
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod

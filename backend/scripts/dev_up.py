@@ -9,9 +9,25 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+BACKEND_ENV = ROOT / "backend" / ".env"
+
+
+def ensure_development_env() -> None:
+    if BACKEND_ENV.exists():
+        return
+
+    secret = subprocess.check_output(
+        [sys.executable, str(ROOT / "backend" / "scripts" / "generate_secret.py")],
+        text=True,
+    ).strip()
+    BACKEND_ENV.write_text(
+        f"APP_ENV=development\nSECRET_KEY={secret}\n",
+        encoding="utf-8",
+    )
 
 
 def main() -> None:
+    ensure_development_env()
     env = os.environ.copy()
     env.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./quantportfolio.db")
     env.setdefault("REDIS_URL", "redis://127.0.0.1:6379")

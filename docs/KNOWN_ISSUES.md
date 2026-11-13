@@ -12,9 +12,8 @@ against a temporary copy of the SQLite database and that copy was removed afterw
 | Broken | 5 | Fails, blocks a requested flow, or violates a stated demo requirement |
 | Risky | 10 | Works, but is slow, misleading, insecure by default, stale, or fragile |
 
-The most serious demo risks are the unreachable onboarding flow for a newly
-registered browser user, backtest rate limiting during parameter sweeps, 10--26
-second live-data requests, and the development default JWT secret.
+The most serious demo risks are the 10--26 second live-data requests and
+environment-specific setup requirements.
 
 Current status after the follow-up fixes: onboarding, backtest admission,
 proxy labels, unused mock fixtures, responsive overflow, and empty-account
@@ -64,17 +63,16 @@ below as known, not fixing.
   calculations to jobs, and expose progress rather than blocking page loads.
 - **Estimated effort:** 2--4 hours.
 
-### B4. The default JWT secret is publicly known (KNOWN, NOT FIXING)
+### B4. A persistent secret is required outside development (FIXED)
 
 - **Where:** `backend/config.py:18`:
   `SECRET_KEY: str = "change-me-to-a-long-random-secret"`.
-- **Evidence:** Starting the local stack without an environment override uses
-  that literal value. `README.md:430` and `backend/.env.example:8` also contain
-  public placeholder secrets. This is acceptable only as an explicitly local
-  development mode, not as a deployable default.
-- **Suggested fix:** Fail startup outside an explicit development mode when the
-  secret is unchanged; require a generated secret in setup.
-- **Estimated effort:** 30--60 minutes.
+- **Evidence:** Startup now rejects missing or known placeholder values outside
+  development. Local setup generates a random development secret, and the
+  generator prints a persistent secret for production configuration.
+- **Suggested fix:** Keep `SECRET_KEY` out of source control and configure it
+  through the deployment environment.
+- **Estimated effort:** Complete.
 
 ### B5. The ordinary backend test command is host-permission fragile (KNOWN, NOT FIXING)
 
