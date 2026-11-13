@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import math
 from pathlib import Path
 from uuid import UUID
 
@@ -166,13 +167,16 @@ async def run_stress_test(
     current_values_inr: dict[str, float] = {}
     for ticker in tickers:
         live_price_inr = live_prices_inr.get(ticker)
-        if live_price_inr is not None:
+        if live_price_inr is not None and math.isfinite(float(live_price_inr)):
             current_values_inr[ticker] = float(live_price_inr) * quantities[ticker]
             continue
         frame = price_data.get(ticker)
         if frame is None or frame.empty:
             continue
-        price = float(frame["close"].iloc[-1])
+        prices = pd.to_numeric(frame["close"], errors="coerce").replace([float("inf"), float("-inf")], pd.NA).dropna()
+        if prices.empty:
+            continue
+        price = float(prices.iloc[-1])
         currency = asset_currencies.get(ticker, "USD").upper()
         if currency == "USD":
             price_inr = price * usd_inr

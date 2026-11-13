@@ -72,6 +72,15 @@ def compute_historical_scenario(
     per_holding = []
     total_return = 0.0
 
+    def scenario_return(frame: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> float | None:
+        window = frame[(frame.index >= start) & (frame.index <= end)]
+        if "close" not in window.columns:
+            return None
+        prices = pd.to_numeric(window["close"], errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+        if len(prices) < 2 or prices.iloc[0] == 0:
+            return None
+        return float(prices.iloc[-1] / prices.iloc[0] - 1)
+
     for h in holdings:
         ticker = h["ticker"]
         weight = h["weight"]
@@ -87,10 +96,7 @@ def compute_historical_scenario(
             # Filter to scenario window
             start = pd.Timestamp(scenario["start"])
             end = pd.Timestamp(scenario["end"])
-            window = df[(df.index >= start) & (df.index <= end)]
-            if len(window) >= 2:
-                # Return = last price / first price - 1
-                scenario_ret = float(window["close"].iloc[-1] / window["close"].iloc[0] - 1)
+            scenario_ret = scenario_return(df, start, end)
 
         # Fall back to proxy if needed
         if scenario_ret is None:
@@ -100,9 +106,7 @@ def compute_historical_scenario(
             if proxy_df is not None and not proxy_df.empty:
                 start = pd.Timestamp(scenario["start"])
                 end = pd.Timestamp(scenario["end"])
-                window = proxy_df[(proxy_df.index >= start) & (proxy_df.index <= end)]
-                if len(window) >= 2:
-                    scenario_ret = float(window["close"].iloc[-1] / window["close"].iloc[0] - 1)
+                scenario_ret = scenario_return(proxy_df, start, end)
             if scenario_ret is None:
                 scenario_ret = 0.0  # last resort: no impact
 

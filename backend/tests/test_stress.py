@@ -114,6 +114,28 @@ def test_compute_historical_scenario_proxy_fallback() -> None:
     assert pytest.approx(result.portfolio_inr_impact, 0.01) == -25000.0
 
 
+def test_compute_historical_scenario_ignores_non_finite_prices() -> None:
+    scenario = {
+        "name": "COVID",
+        "label": "COVID Crash",
+        "start": "2020-02-19",
+        "end": "2020-03-23",
+    }
+    prices = _make_price_df("2020-02-19", "2020-03-23", 100.0, 80.0)
+    prices.iloc[0, 0] = np.nan
+    prices.iloc[2, 0] = np.inf
+
+    result = compute_historical_scenario(
+        scenario=scenario,
+        holdings=[{"ticker": "AAPL", "weight": 1.0, "asset_class": "stock", "value_inr": 100000.0}],
+        price_data={"AAPL": prices},
+        portfolio_value_inr=100000.0,
+    )
+
+    assert np.isfinite(result.portfolio_return_pct)
+    assert result.portfolio_return_pct < 0
+
+
 def test_compute_custom_shock() -> None:
     holdings = [
         {"ticker": "INFY.NS", "weight": 0.5, "asset_class": "stock", "currency": "INR"},
