@@ -55,8 +55,8 @@ class OptimizationRequest(BaseModel):
     risk_tolerance: float = Field(ge=0.0, le=1.0, description="0=min variance, 1=max return")
     constraints: PortfolioConstraints | None = None
     user_views: list[UserView] = Field(default_factory=list)
-    use_regime_scaling: bool = True
-    use_lstm_forecasts: bool = True  # legacy name kept for backward compat
+    use_regime_scaling: bool = False
+    use_lstm_forecasts: bool = False  # legacy name kept for backward compat
     use_ml_forecast: bool | None = None  # new canonical name; overrides use_lstm_forecasts when set
 
     @model_validator(mode="after")

@@ -48,16 +48,34 @@ Open: http://localhost:5173
 4. Point out:
    - **Headline card**: "Optimized vs Equal Weight over 3Y: +INR X" (green) or "-INR X"
      (red). Honest result -- if the optimizer underperformed equal weight, it shows red.
-   - **Metrics table**: 6 strategies (Optimized, Equal Weight, Buy and Hold, Min Variance,
-     SPY, NIFTY). The best value in each column is highlighted in indigo.
+   - **Metrics table**: 7 strategies (Optimized, QP Smart, Equal Weight, Buy and Hold,
+     Min Variance, SPY, NIFTY). The best value in each column is highlighted in indigo.
    - **Equity curves**: multi-line Recharts chart, one line per strategy from INR 100,000.
    - **Drawdown chart**: underwater area showing peak-to-trough loss for each strategy.
-   - **Weights over time**: stacked area chart showing the Optimized strategy's allocations
+   - **Weights over time**: stacked area chart showing the QP Smart strategy's allocations
      at each rebalance date.
-5. Toggle ML Forecast ON to see the effect (gate not passed so difference is minimal --
-   that is the honest result; the UI badge on the Optimize page will say "ML not used").
+5. ML Forecast and Regime Scaling default to OFF because the five-year evaluation
+   did not justify either option. They can be enabled explicitly for comparison.
 
-#### Live 3-year talking points (run 2026-11-13)
+#### Five-year held-out talking points (run 2026-11-13)
+
+The strict 5-year walk-forward evaluation is documented in
+[IMPROVEMENT_REPORT.md](IMPROVEMENT_REPORT.md). QP Smart selected
+**Shrinkage lambda=0 (equal weight)** using data through 2023-04-28; the final
+40% was held out. It did not beat Equal Weight because it is intentionally the
+same weights. No-trade 10% quarterly had the strongest held-out result, but it
+was not promoted because choosing it would look at the holdout.
+
+| Strategy | Profit (INR) | Sharpe | Max drawdown |
+|---|---:|---:|---:|
+| QP Smart / Equal Weight | +47,141.66 | +0.1452 | -16.51% |
+| No-trade 10%, quarterly (not selected) | +64,584.94 | +0.3510 | -16.71% |
+| SPY reference | +90,119.12 | — | — |
+
+The volatility model was rejected before selection (held-out MAE 0.4796 versus
+0.0503 for trailing volatility).
+
+#### Previous live 3-year talking points (run 2026-11-13)
 
 The seeded demo portfolio was run with monthly rebalancing, risk tolerance 0.5, 10 bps
 transaction costs, and ML OFF. These are live-data results, so they will change as the
@@ -96,7 +114,8 @@ and SPY by INR 49,869.89 over this window.
 ### Step 4 (60 seconds): Optimize + Explainability (/optimize)
 
 1. Click "Optimize" in the nav bar.
-2. Run an optimization (risk 0.5, default constraints, ML Forecast toggle ON).
+2. Run an optimization (risk 0.5, default constraints, ML Forecast and Regime Scaling
+   toggles OFF).
 3. Point out:
    - **Why This Allocation** grouped bar chart: for each asset, shows equilibrium,
      historical, ML, and momentum return components in side-by-side bars. This answers

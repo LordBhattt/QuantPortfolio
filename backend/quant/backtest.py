@@ -7,6 +7,13 @@ import numpy as np
 import pandas as pd
 
 from backend.config import get_settings
+from backend.quant.smart_backtest import (
+    SmartConfig,
+    fit_vol_models,
+    select_config,
+    smart_weights,
+    vol_model_error,
+)
 from backend.services.optimization_service import optimize_from_returns
 
 settings = get_settings()
@@ -77,6 +84,60 @@ def _pad_weights(w: dict[str, float], all_tickers: list[str]) -> dict[str, float
     if total > 0:
         padded = {t: v / total for t, v in padded.items()}
     return padded
+
+
+def _static_candidate_score(
+    config: SmartConfig,
+    train_prices: pd.DataFrame,
+    tickers: list[str],
+    asset_classes: list[str],
+    constraints: Any,
+    risk_tolerance: float,
+    use_regime: bool,
+    regime_detector: Any,
+    rf: float,
+) -> float:
+    returns = np.log(train_prices[tickers].ffill().dropna() / train_prices[tickers].ffill().dropna().shift(1)).dropna()
+    if len(returns) < 30:
+        return -999.0
+    if config.family == "vol_model":
+        internal_split = max(21, int(len(returns) * 0.60))
+        error = vol_model_error(returns.iloc[:internal_split], returns.iloc[internal_split:])
+        if not error["model_beats_baseline"]:
+            return -999.0
+
+    def optimizer(frame: pd.DataFrame, names: list[str], classes: list[str]) -> dict[str, float]:
+        result = optimize_from_returns(
+            returns_df=frame,
+            tickers=names,
+            asset_classes=classes,
+            constraints=constraints,
+            risk_tolerance=risk_tolerance,
+            use_regime=use_regime,
+            regime_detector=regime_detector,
+            ml_forecasts=None,
+            use_ml=False,
+            risk_free_rate=rf,
+        )
+        return result["weights"]
+
+    vol_models = fit_vol_models(returns) if config.family == "vol_model" else None
+    weights = smart_weights(
+        returns,
+        tickers,
+        asset_classes,
+        constraints,
+        config,
+        optimizer,
+        regime=None,
+        vol_models=vol_models,
+    )
+    portfolio_returns = returns.mul([weights[t] for t in tickers], axis=1).sum(axis=1)
+    if portfolio_returns.empty:
+        return -999.0
+    annual_return = float(np.exp(portfolio_returns.mean() * 252) - 1.0)
+    annual_vol = float(portfolio_returns.std() * np.sqrt(252))
+    return (annual_return - rf) / annual_vol if annual_vol > 1e-8 else -999.0
 
 
 def run_backtest(
@@ -153,7 +214,7 @@ def run_backtest(
         raise ValueError("Insufficient price data for backtest window")
 
     # Strategy tracking setup
-    strategy_names = ["Optimized", "Equal Weight", "Buy and Hold", "Min Variance"]
+    strategy_names = ["Optimized", "QP Smart", "Equal Weight", "Buy and Hold", "Min Variance"]
     if spy_present:
         strategy_names.append("SPY")
     if nifty_present:
@@ -167,6 +228,7 @@ def run_backtest(
     current_weights: dict[str, dict[str, float]] = {s: {} for s in strategy_names}
     turnovers: dict[str, list[float]] = {s: [] for s in strategy_names}
     weights_history: list[dict] = []
+    selected_settings: dict[str, Any] = {}
 
     # Rebalance schedule indices relative to backtest_dates
     rebal_indices = list(range(0, len(backtest_dates), freq_days))
@@ -174,6 +236,36 @@ def run_backtest(
         rebal_indices.append(len(backtest_dates) - 1)
 
     buy_hold_weights: dict[str, float] | None = None
+
+    # Hyperparameters are selected from the first 60% only. The selected config
+    # is then frozen for the complete walk-forward simulation.
+    split_idx = max(1, int(len(backtest_dates) * 0.60))
+    split_date = backtest_dates[split_idx - 1]
+    selection_prices = prices.loc[:split_date, core_tickers]
+    selected_config, train_scores = select_config(
+        selection_prices,
+        split_date,
+        lambda config, train: _static_candidate_score(
+            config,
+            train,
+            core_tickers,
+            [asset_class_map[t] for t in core_tickers],
+            constraints,
+            risk_tolerance,
+            use_regime,
+            regime_detector,
+            rf,
+        ),
+    )
+    selected_settings = {
+        "config": selected_config.label(),
+        "family": selected_config.family,
+        "train_end": str(split_date.date()),
+        "train_scores": train_scores,
+        "selection_rule": "highest train-period Sharpe; no prices after train_end were read",
+    }
+    smart_last_update_idx = -selected_config.rebalance_days
+    smart_current_weights: dict[str, float] = {}
 
     for step_i in range(len(rebal_indices) - 1):
         idx_curr = rebal_indices[step_i]
@@ -222,6 +314,50 @@ def run_backtest(
         else:
             opt_w = _equal_weights(valid_tickers)
 
+        # 1b. QP Smart: frozen train-selected configuration, dynamic weights
+        smart_w: dict[str, float]
+        if idx_curr - smart_last_update_idx >= selected_config.rebalance_days:
+            smart_returns = window_returns
+
+            def smart_optimizer(frame: pd.DataFrame, names: list[str], classes: list[str]) -> dict[str, float]:
+                result = optimize_from_returns(
+                    returns_df=frame,
+                    tickers=names,
+                    asset_classes=classes,
+                    constraints=constraints,
+                    risk_tolerance=risk_tolerance,
+                    use_regime=use_regime,
+                    regime_detector=regime_detector,
+                    ml_forecasts=None,
+                    use_ml=False,
+                    risk_free_rate=rf,
+                )
+                return result["weights"]
+
+            regime_label = None
+            if use_regime and regime_detector is not None and getattr(regime_detector, "is_fitted", False):
+                try:
+                    regime_label = regime_detector.regime_label(
+                        regime_detector.detect_regime(smart_returns.iloc[:, 0]).state
+                    )
+                except Exception:
+                    regime_label = None
+            smart_w = smart_weights(
+                smart_returns,
+                valid_tickers,
+                valid_asset_classes,
+                constraints,
+                selected_config,
+                smart_optimizer,
+                previous_weights=smart_current_weights or None,
+                regime=regime_label,
+                vol_models=fit_vol_models(smart_returns) if selected_config.family == "vol_model" else None,
+            )
+            smart_current_weights = smart_w
+            smart_last_update_idx = idx_curr
+        else:
+            smart_w = smart_current_weights or _equal_weights(valid_tickers)
+
         # 2. Min Variance weights
         min_var_w: dict[str, float] = {}
         if len(window_returns) >= 15 and len(valid_tickers) >= 1:
@@ -249,21 +385,23 @@ def run_backtest(
 
         # Pad weights across all core_tickers
         opt_padded = _pad_weights(opt_w, core_tickers)
+        smart_padded = _pad_weights(smart_w, core_tickers)
         min_var_padded = _pad_weights(min_var_w, core_tickers)
         eq_padded = _pad_weights(eq_w, core_tickers)
 
         if buy_hold_weights is None:
             buy_hold_weights = opt_padded.copy()
 
-        # Record weights history for Optimized
+        # Record weights history for QP Smart
         rebal_date_str = str(rebal_date.date() if hasattr(rebal_date, "date") else rebal_date)
         hist_entry = {"date": rebal_date_str}
-        hist_entry.update({t: round(opt_padded.get(t, 0.0), 4) for t in core_tickers})
+        hist_entry.update({t: round(smart_padded.get(t, 0.0), 4) for t in core_tickers})
         weights_history.append(hist_entry)
 
         # Target weights for each strategy
         step_weights = {
             "Optimized": opt_padded,
+            "QP Smart": smart_padded,
             "Equal Weight": eq_padded,
             "Buy and Hold": buy_hold_weights,
             "Min Variance": min_var_padded,
@@ -352,4 +490,5 @@ def run_backtest(
         "strategy_names": strategy_names,
         "years": round(years, 2),
         "dates": curve_dates,
+        "selected_settings": selected_settings,
     }

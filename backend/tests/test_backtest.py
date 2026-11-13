@@ -7,6 +7,7 @@ import pytest
 pytest.importorskip("cvxpy")
 
 from backend.quant.backtest import _compute_metrics, run_backtest
+from backend.quant.smart_backtest import SmartConfig, select_config
 from backend.schemas.backtest import BacktestRequest, BacktestResponse, StrategyMetrics
 from backend.schemas.optimization import PortfolioConstraints
 from backend.services.optimization_service import optimize_from_returns
@@ -137,7 +138,7 @@ def test_run_backtest_walk_forward() -> None:
     assert "weights_history" in res
     assert "strategy_names" in res
 
-    expected_strats = {"Optimized", "Equal Weight", "Buy and Hold", "Min Variance", "SPY", "NIFTY"}
+    expected_strats = {"Optimized", "QP Smart", "Equal Weight", "Buy and Hold", "Min Variance", "SPY", "NIFTY"}
     assert set(res["strategy_names"]) == expected_strats
 
     for strat in expected_strats:
@@ -160,6 +161,21 @@ def test_run_backtest_walk_forward() -> None:
     assert "date" in first_hist
     assert "RELIANCE.NS" in first_hist
     assert "TCS.NS" in first_hist
+
+
+def test_smart_config_selection_never_reads_after_split() -> None:
+    dates = pd.date_range("2020-01-01", periods=100, freq="B")
+    prices = pd.DataFrame({"AAA": np.linspace(100, 120, len(dates))}, index=dates)
+    split_date = dates[59]
+    seen: list[pd.Timestamp] = []
+
+    def score(_: SmartConfig, train: pd.DataFrame) -> float:
+        seen.append(train.index.max())
+        return float(train["AAA"].iloc[-1])
+
+    select_config(prices, split_date, score)
+    assert seen
+    assert all(date <= split_date for date in seen)
 
 
 def test_compute_metrics_numerical_stability() -> None:

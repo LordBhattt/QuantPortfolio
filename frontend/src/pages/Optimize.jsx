@@ -27,8 +27,8 @@ export default function Optimize() {
     bonds: { min: 10, max: 40 },
   });
   const [userViews, setUserViews] = useState([]);
-  const [useLstm, setUseLstm] = useState(true);
-  const [useRegime, setUseRegime] = useState(true);
+  const [useLstm, setUseLstm] = useState(false);
+  const [useRegime, setUseRegime] = useState(false);
 
   const { run, result, loading, error } = useOptimize();
   const mappedResult = useMemo(() => mapOptimizationResult(result), [result]);

@@ -14,6 +14,7 @@ const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"
 
 const STRATEGY_COLORS = {
   "Optimized": "#6366f1",
+  "QP Smart": "#0f766e",
   "Equal Weight": "#10b981",
   "Buy and Hold": "#f59e0b",
   "Min Variance": "#8b5cf6",
@@ -319,6 +320,11 @@ export default function Backtest() {
             <p className="text-xs text-gray-500 mt-1">
               {params.lookback_years}Y walk-forward | {params.rebalance} rebalance | cost {params.cost_bps}bps | starting INR 1,00,000
             </p>
+            {result.selected_settings?.config && (
+              <p className="text-xs text-gray-600 mt-2">
+                QP Smart settings: {result.selected_settings.config} (selected through {result.selected_settings.train_end})
+              </p>
+            )}
           </Card>
 
           {/* Metrics table */}
@@ -342,7 +348,7 @@ export default function Backtest() {
           {/* Weights history */}
           {result.weights_history && result.weights_history.length > 0 && (
             <Card className="p-5 mb-6">
-              <h3 className="text-sm font-semibold text-gray-600 mb-4">Optimized - Weights Over Time</h3>
+              <h3 className="text-sm font-semibold text-gray-600 mb-4">QP Smart - Weights Over Time</h3>
               <WeightsChart weightsHistory={result.weights_history} />
             </Card>
           )}

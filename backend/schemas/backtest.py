@@ -34,3 +34,4 @@ class BacktestResponse(BaseModel):
     best_strategy: str
     headline: str  # "Optimized vs Equal Weight over 3Y: +INR X"
     parameters: dict
+    selected_settings: dict = Field(default_factory=dict)

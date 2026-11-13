@@ -238,4 +238,5 @@ async def run_backtest_service(
             "use_ml": request.use_ml,
             "use_regime": request.use_regime,
         },
+        selected_settings=backtest_result.get("selected_settings", {}),
     )
