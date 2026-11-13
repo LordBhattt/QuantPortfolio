@@ -11,6 +11,7 @@ from backend.quant.smart_backtest import (
     SmartConfig,
     fit_vol_models,
     select_config,
+    select_config_rolling,
     smart_weights,
     vol_model_error,
 )
@@ -242,7 +243,7 @@ def run_backtest(
     split_idx = max(1, int(len(backtest_dates) * 0.60))
     split_date = backtest_dates[split_idx - 1]
     selection_prices = prices.loc[:split_date, core_tickers]
-    selected_config, train_scores = select_config(
+    selected_config, train_scores = select_config_rolling(
         selection_prices,
         split_date,
         lambda config, train: _static_candidate_score(

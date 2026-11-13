@@ -29,14 +29,16 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    env_file:
-      - ./.env
     environment:
+      DATABASE_URL: postgresql+asyncpg://quantportfolio:quantportfolio@db:5432/quantportfolio
+      REDIS_URL: redis://redis:6379
       ALLOWED_ORIGINS: '["http://localhost:8081","http://127.0.0.1:8081"]'
       AUTH_COOKIE_SECURE: "false"
     ports:
       - "8000:8000"
     depends_on:
+      db:
+        condition: service_healthy
       redis:
         condition: service_healthy
 

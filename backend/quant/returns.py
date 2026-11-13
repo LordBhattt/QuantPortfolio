@@ -19,7 +19,7 @@ def align_returns(
     price_data: Dict[str, pd.DataFrame],
     asset_currencies: Dict[str, str],
     base_currency: str = "USD",
-    usd_inr_rate: float = 83.5,
+    usd_inr_rate: float | pd.Series = 83.5,
 ) -> pd.DataFrame:
     series_dict: dict[str, pd.Series] = {}
     target_currency = base_currency.upper()
@@ -27,10 +27,13 @@ def align_returns(
     for ticker, frame in price_data.items():
         prices = frame["close"].astype(float).copy()
         native = asset_currencies.get(ticker, "USD").upper()
+        fx = usd_inr_rate
+        if isinstance(usd_inr_rate, pd.Series):
+            fx = usd_inr_rate.reindex(prices.index).ffill().bfill()
         if native == "INR" and target_currency == "USD":
-            prices = prices / usd_inr_rate
+            prices = prices / fx
         elif native == "USD" and target_currency == "INR":
-            prices = prices * usd_inr_rate
+            prices = prices * fx
         returns = log_returns(prices)
         if not returns.empty:
             series_dict[ticker] = returns

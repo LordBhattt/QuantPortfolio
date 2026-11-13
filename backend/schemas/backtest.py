@@ -10,7 +10,7 @@ class BacktestRequest(BaseModel):
     risk_tolerance: float = Field(default=0.5, ge=0.0, le=1.0)
     cost_bps: int = Field(default=10, ge=0, le=200)
     use_ml: bool = Field(default=False)
-    use_regime: bool = Field(default=True)
+    use_regime: bool = Field(default=False)
 
 
 class StrategyMetrics(BaseModel):

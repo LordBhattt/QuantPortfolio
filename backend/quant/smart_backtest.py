@@ -39,7 +39,7 @@ class SmartConfig:
 def candidate_configs() -> list[SmartConfig]:
     configs = [
         SmartConfig("Shrinkage", "shrink", shrink_lambda=value)
-        for value in (0.0, 0.25, 0.5, 0.75)
+        for value in (0.0, 0.25, 0.5, 0.75, 1.0)
     ]
     configs.extend(
         SmartConfig("No-trade", "optimizer", no_trade_band=band, rebalance_days=days)
@@ -147,7 +147,6 @@ def _hrp(returns: pd.DataFrame) -> np.ndarray:
         next_clusters: list[list[int]] = []
         for cluster in clusters:
             if len(cluster) <= 1:
-                weights[cluster] = 1.0
                 continue
             midpoint = len(cluster) // 2
             left, right = cluster[:midpoint], cluster[midpoint:]
@@ -164,7 +163,6 @@ def _hrp(returns: pd.DataFrame) -> np.ndarray:
 
 
 def _vol_features(returns: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
-    daily = returns.to_numpy(dtype=float)
     rows: list[np.ndarray] = []
     targets: list[np.ndarray] = []
     for index in range(63, len(returns) - 21):
@@ -176,7 +174,8 @@ def _vol_features(returns: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
             ]
         )
         rows.append(features)
-        targets.append(returns.iloc[index:index + 21].std().to_numpy() * np.sqrt(252))
+        forward = returns.iloc[index:index + 21]
+        targets.append(np.sqrt(np.square(forward.to_numpy()).mean(axis=0) * 252))
     return np.asarray(rows), np.asarray(targets)
 
 
@@ -187,7 +186,7 @@ def fit_vol_models(returns: pd.DataFrame) -> list[GradientBoostingRegressor] | N
     models: list[GradientBoostingRegressor] = []
     for column in range(targets.shape[1]):
         model = GradientBoostingRegressor(random_state=7, n_estimators=40, max_depth=2)
-        model.fit(features, targets[:, column])
+        model.fit(features, np.log(np.maximum(targets[:, column], 1e-8)))
         models.append(model)
     return models
 
@@ -202,7 +201,7 @@ def forecast_volatility(
     features = np.concatenate(
         [returns.tail(window).std().to_numpy() * np.sqrt(252) for window in (5, 21, 63)]
     ).reshape(1, -1)
-    return np.maximum(np.asarray([model.predict(features)[0] for model in models]), 1e-8)
+    return np.maximum(np.exp(np.asarray([model.predict(features)[0] for model in models])), 1e-8)
 
 
 def vol_model_error(
@@ -216,9 +215,11 @@ def vol_model_error(
     errors_baseline: list[float] = []
     for index in range(0, len(test_returns) - 21, 21):
         history = pd.concat([train_returns, test_returns.iloc[:index]])
-        actual = test_returns.iloc[index:index + 21].std().to_numpy() * np.sqrt(252)
+        actual_window = test_returns.iloc[index:index + 21]
+        actual = np.sqrt(np.square(actual_window.to_numpy()).mean(axis=0) * 252)
         predicted = forecast_volatility(history, models)
-        baseline = history.tail(63).std().to_numpy() * np.sqrt(252)
+        baseline_window = history.tail(63)
+        baseline = np.sqrt(np.square(baseline_window.to_numpy()).mean(axis=0) * 252)
         errors_model.append(float(np.mean(np.abs(predicted - actual))))
         errors_baseline.append(float(np.mean(np.abs(baseline - actual))))
     model_mae = float(np.mean(errors_model)) if errors_model else 0.0
@@ -267,12 +268,31 @@ def smart_weights(
         if safe.any():
             weights[safe] += transfer / safe.sum()
 
+    if config.vol_target:
+        annual_cov = returns.cov().to_numpy() * 252
+        annual_vol = float(np.sqrt(max(weights @ annual_cov @ weights, 0.0)))
+        if annual_vol > config.vol_target:
+            risky = np.array([asset_class not in {"bond", "gold"} for asset_class in asset_classes])
+            safe = ~risky
+            scale = config.vol_target / annual_vol
+            transfer = float(weights[risky].sum()) * (1.0 - scale)
+            weights[risky] *= scale
+            if safe.any():
+                weights[safe] += transfer / safe.sum()
+
     weights = project_class_bounds(weights, asset_classes, constraints)
     proposed = {ticker: float(weight) for ticker, weight in zip(tickers, weights)}
     if previous_weights and config.no_trade_band:
-        drift = max(abs(proposed.get(ticker, 0.0) - previous_weights.get(ticker, 0.0)) for ticker in tickers)
-        if drift <= config.no_trade_band:
-            return dict(previous_weights)
+        bounded = np.array([
+            previous_weights.get(ticker, 0.0)
+            if abs(proposed.get(ticker, 0.0) - previous_weights.get(ticker, 0.0)) <= config.no_trade_band
+            else proposed.get(ticker, 0.0)
+            for ticker in tickers
+        ])
+        bounded = np.maximum(bounded, 0.0)
+        if bounded.sum() > 0:
+            bounded /= bounded.sum()
+        proposed = {ticker: float(weight) for ticker, weight in zip(tickers, bounded)}
     return proposed
 
 
@@ -286,6 +306,30 @@ def select_config(
     if train.empty or train.index.max() > split_date:
         raise AssertionError("config selection received data after the split date")
     scores = {config.label(): float(evaluate(config, train)) for config in candidate_configs()}
+    best_label = max(scores, key=scores.get)
+    best = next(config for config in candidate_configs() if config.label() == best_label)
+    return best, scores
+
+
+def select_config_rolling(
+    prices: pd.DataFrame,
+    split_date: pd.Timestamp,
+    evaluate: Callable[[SmartConfig, pd.DataFrame], float],
+    windows: int = 4,
+    variance_penalty: float = 0.25,
+) -> tuple[SmartConfig, dict[str, float]]:
+    """Select using only several pre-split expanding windows."""
+    train = prices.loc[:split_date]
+    if train.empty or train.index.max() > split_date:
+        raise AssertionError("config selection received data after the split date")
+    endpoints = np.linspace(max(30, int(len(train) * 0.35)), len(train), windows).astype(int)
+    scores: dict[str, float] = {}
+    for config in candidate_configs():
+        window_scores = [
+            float(evaluate(config, train.iloc[:int(endpoint)]))
+            for endpoint in endpoints
+        ]
+        scores[config.label()] = float(np.mean(window_scores) - variance_penalty * np.std(window_scores))
     best_label = max(scores, key=scores.get)
     best = next(config for config in candidate_configs() if config.label() == best_label)
     return best, scores

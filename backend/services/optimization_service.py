@@ -250,9 +250,14 @@ async def run_optimization(
     asset_currencies = {ticker: asset_currencies[ticker] for ticker in tickers}
     asset_classes = [asset_map[ticker]["asset_class"].value for ticker in tickers]
     usd_inr = await fetcher.get_usd_inr_rate()
+    fx_result = await fetch_history("INR=X")
+    fx_series = None
+    if not isinstance(fx_result, Exception) and not fx_result.empty:
+        fx_series = fx_result["close"].astype(float)
 
     returns_df = await loop.run_in_executor(
-        None, align_returns, price_data, asset_currencies, "USD", usd_inr,
+        None, align_returns, price_data, asset_currencies, "USD",
+        fx_series if fx_series is not None else usd_inr,
     )
     returns_df = returns_df.tail(settings.MVO_ROLLING_WINDOW_DAYS)
     if returns_df.empty or len(returns_df.columns) == 0:

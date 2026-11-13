@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("cvxpy")
 
 from backend.quant.backtest import _compute_metrics, run_backtest
-from backend.quant.smart_backtest import SmartConfig, select_config
+from backend.quant.smart_backtest import SmartConfig, _hrp, select_config, smart_weights
 from backend.schemas.backtest import BacktestRequest, BacktestResponse, StrategyMetrics
 from backend.schemas.optimization import PortfolioConstraints
 from backend.services.optimization_service import optimize_from_returns
@@ -178,6 +178,37 @@ def test_smart_config_selection_never_reads_after_split() -> None:
     assert all(date <= split_date for date in seen)
 
 
+def test_hrp_produces_non_equal_weights_for_heterogeneous_assets() -> None:
+    rng = np.random.default_rng(7)
+    returns = pd.DataFrame(
+        rng.normal(0.0, [0.01, 0.03, 0.06], size=(180, 3)),
+        columns=["low", "medium", "high"],
+    )
+    weights = _hrp(returns)
+    assert np.isclose(weights.sum(), 1.0)
+    assert not np.allclose(weights, np.full(3, 1 / 3), atol=1e-3)
+
+
+def test_no_trade_band_reduces_turnover() -> None:
+    returns = pd.DataFrame(
+        np.tile([[0.01, 0.002, 0.001]], (80, 1)),
+        columns=["a", "b", "c"],
+    )
+    previous = {"a": 1 / 3, "b": 1 / 3, "c": 1 / 3}
+
+    def optimizer(_: pd.DataFrame, names: list[str], __: list[str]) -> dict[str, float]:
+        return {names[0]: 0.70, names[1]: 0.20, names[2]: 0.10}
+
+    config = SmartConfig("No-trade", "optimizer", no_trade_band=0.15)
+    bounded = smart_weights(
+        returns, ["a", "b", "c"], ["stock", "stock", "gold"], None,
+        config, optimizer, previous_weights=previous,
+    )
+    unconstrained_turnover = sum(abs(optimizer(returns, ["a", "b", "c"], [])[ticker] - previous[ticker]) for ticker in previous)
+    bounded_turnover = sum(abs(bounded[ticker] - previous[ticker]) for ticker in previous)
+    assert bounded_turnover < unconstrained_turnover
+
+
 def test_compute_metrics_numerical_stability() -> None:
     dates = pd.date_range("2025-01-01", periods=100, freq="B")
     flat_equity = pd.Series([100000.0] * 100, index=dates)
@@ -198,7 +229,7 @@ def test_backtest_schemas() -> None:
     assert req.risk_tolerance == 0.5
     assert req.cost_bps == 10
     assert not req.use_ml
-    assert req.use_regime
+    assert not req.use_regime
 
     m = StrategyMetrics(
         name="Optimized",

@@ -101,7 +101,7 @@ def _fetch_usd_to_inr() -> float:
             return float(val.item() if hasattr(val, "item") else val)
     except Exception:
         pass
-    return 84.0  # realistic fallback
+    raise RuntimeError("Unable to fetch USD/INR exchange rate")
 
 
 def _fetch_historical_and_current(ticker: str, currency: str, usd_inr: float) -> tuple[float, float]:

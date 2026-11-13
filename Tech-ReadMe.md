@@ -47,7 +47,7 @@ React/Vite frontend (SPA)
 | Holding management + upsert | ✅ Fully working | Add, bulk-add, list, delete — with weighted-average merge on duplicate ticker |
 | Asset search + seeding | ✅ Fully working | 13 default assets seeded on startup; search by ticker/name, filter by class |
 | Onboarding wizard | ✅ Fully working | 6-step investor profiling → risk score → auto-create portfolio with calibrated constraints → recommended holdings with live prices |
-| Optimization (BL + MVO + frontier) | ✅ Fully working | Full pipeline with regime scaling, user views, LSTM forecasts, efficient frontier |
+| Optimization (BL + MVO + frontier) | ✅ Fully working | Full pipeline with optional regime scaling, user views, gated forecasts, efficient frontier |
 | Risk metrics (VaR, CVaR, Sharpe, etc.) | ✅ Fully working | Historical VaR/CVaR at 95%/99%, drawdown, Sharpe, Sortino, Calmar, beta |
 | Monte Carlo simulation | ✅ Fully working | Regime-switching GBM with Student-t tails, jump diffusion, Cholesky correlation |
 | Factor analysis (FF5) | ✅ Fully working | OLS regression on Ken French daily factors, annualized alpha and betas |
@@ -59,7 +59,7 @@ React/Vite frontend (SPA)
 | Momentum forecaster (sklearn) | ✅ Loaded | `momentum_model.pkl` present; OOS IC = 0.0177, t = 0.63 (noise level per Phase 1 eval) |
 | LSTM forecaster (PyTorch) | ⚠️ Flawed training | `lstm_latest.pt` exists but trains on z-scored price levels (not returns); output * 252 is wrong units for annual return; kept for reference, not used in production |
 | GBM forecaster (HistGradientBoosting) | ✅ Loaded, gate off | `ml_forecaster_v2.joblib` saved; OOS IC = 0.0173, t = 0.61; gate threshold (IC > 0.02, t > 2) not passed; BL weight = 0; UI shows "ML not used" |
-| Backtest Lab | ✅ Fully working | POST /api/v1/backtest/; walk-forward no-lookahead; 6 strategies; equity curves, drawdown, weights history; Redis cache 1h; rate limit 3/min |
+| Backtest Lab | ✅ Fully working | POST /api/v1/backtest/; walk-forward no-lookahead; 7 strategies including QP Smart; equity curves, drawdown, weights history; Redis cache 1h; rate limit 3/min |
 | Stress Test | ✅ Fully working | GET /api/v1/risk/{id}/stress (3 scenarios) + POST custom shock; proxy fallback for missing history; FX impact |
 | Regime history endpoint | ✅ Fully working | GET /api/v1/risk/regime/history; SPY close with per-day HMM regime label |
 | Optimization diagnostics | ✅ Fully working | Optional `diagnostics` field in OptimizationResult with per-asset return components and regime probabilities |
@@ -118,7 +118,9 @@ React/Vite frontend (SPA)
 
 **Non-obvious choice**: The `dropna(how="any")` in `align_returns` means the final matrix only includes dates where *every* asset traded. This loses some data but guarantees the covariance matrix is computed on aligned observations — using `fillna(0)` or forward-fill would introduce fake zero-return days that distort correlation estimates.
 
-**Tricky part**: The FX conversion is applied to prices *before* computing returns, not to returns themselves. This is correct because `ln((P_t / FX) / (P_{t-1} / FX)) = ln(P_t / P_{t-1})` when FX is constant, but in reality FX moves daily. The code uses a single static `usd_inr_rate` rather than a daily FX series, which is a simplification — it correctly converts levels but ignores intra-period FX volatility.
+**Tricky part**: FX conversion is applied to prices before computing returns,
+using the historical USD/INR series when the optimization service can fetch it.
+The static rate remains a fallback for unavailable FX data.
 
 ---
 

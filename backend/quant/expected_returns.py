@@ -76,7 +76,7 @@ def compute_equilibrium_returns(
     cov: np.ndarray,
     market_weights: np.ndarray,
     risk_aversion: float = 2.5,
-    risk_free_rate: float = 0.065,
+    risk_free_rate: float | None = None,
 ) -> np.ndarray:
     """Black-Litterman implied equilibrium returns (arithmetic).
 
@@ -92,6 +92,7 @@ def compute_equilibrium_returns(
     Without this conversion, the Itô correction in MC double-subtracts
     the variance term, causing structurally negative drift.
     """
+    risk_free_rate = _settings.RISK_FREE_RATE if risk_free_rate is None else risk_free_rate
     pi_log_excess = risk_aversion * cov @ market_weights
     sigma_sq = np.diag(cov)
     return pi_log_excess + risk_free_rate + 0.5 * sigma_sq

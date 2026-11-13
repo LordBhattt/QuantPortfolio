@@ -31,7 +31,7 @@ In plain language: you tell the app what you own, it fetches market history, con
   - model badge showing which ML backend ran or "ML not used"
 - Backtest Lab page at /backtest with:
   - walk-forward backtest with no lookahead bias
-  - six strategies: Optimized, Equal Weight, Buy and Hold, Min Variance, SPY, NIFTY
+  - seven strategies: Optimized, QP Smart, Equal Weight, Buy and Hold, Min Variance, SPY, NIFTY
   - multi-line equity curves, drawdown underwater chart, stacked weights-over-time chart
   - metrics comparison table with best column highlighted
   - headline card in plain words, red when optimizer loses
@@ -157,6 +157,16 @@ When the FastAPI app starts, `backend/main.py` does more than just boot the serv
 6. Tries to load LSTM weights from `LSTM_WEIGHTS_PATH`.
 7. Registers those model singletons for the optimization service.
 8. Starts scheduled jobs for cache refreshes and model-maintenance reminders.
+
+For a local demo with no external services, run:
+
+```bash
+python backend/scripts/dev_up.py
+```
+
+The script seeds the demo account, starts FastAPI on port 8000, and starts the
+Vite frontend. SQLite and the in-memory cache are used by default. Docker
+Compose provides local Postgres and Redis when those services are desired.
 
 ## Quant Models In Easy Language
 

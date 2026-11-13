@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     )
 
     # DB
-    DATABASE_URL: str = "postgresql+asyncpg://quantportfolio:quantportfolio@localhost:5432/quantportfolio"
+    DATABASE_URL: str = "sqlite+aiosqlite:///./quantportfolio.db"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379"
