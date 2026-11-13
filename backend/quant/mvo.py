@@ -131,14 +131,29 @@ def _build_class_constraints(weights: cp.Variable, asset_classes: list[str], con
         "mf_etf": "mf_etf",
         "bonds": "bond",
     }
+
+    # Identify which classes are actually present in the portfolio
+    present: dict[str, list[int]] = {}
+    class_bounds: dict[str, dict] = {}
     for schema_name, bounds in class_map.items():
         asset_class = aliases.get(schema_name)
         if asset_class is None:
             continue
-        indexes = [index for index, name in enumerate(asset_classes) if name == asset_class]
-        if not indexes:
-            continue
+        indexes = [idx for idx, name in enumerate(asset_classes) if name == asset_class]
+        if indexes:
+            present[asset_class] = indexes
+            class_bounds[asset_class] = bounds
+
+    # If the sum of present-class maxes is less than 1.0, the constraints would be
+    # infeasible (weights must sum to 1 but no room for the residual). Scale maxes up.
+    total_max = sum(b["max"] for b in class_bounds.values())
+    max_scale = max(1.0, 1.0 / total_max) if total_max > 0 else 1.0
+
+    for asset_class, indexes in present.items():
+        bounds = class_bounds[asset_class]
+        effective_max = min(1.0, bounds["max"] * max_scale)
         class_weight = cp.sum(weights[indexes])
         resolved_constraints.append(class_weight >= bounds["min"])
-        resolved_constraints.append(class_weight <= bounds["max"])
+        resolved_constraints.append(class_weight <= effective_max)
+
     return resolved_constraints

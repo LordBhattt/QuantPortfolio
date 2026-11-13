@@ -35,20 +35,23 @@ def build_sqlite_database_url() -> str:
     return f"sqlite+aiosqlite:///{SQLITE_DATABASE_PATH.as_posix()}"
 
 
-def _engine_kwargs() -> dict:
+def _engine_kwargs(database_url: str | None = None) -> dict:
+    url = database_url or settings.DATABASE_URL
+    is_sqlite = url.startswith("sqlite")
     kwargs: dict = {
         "echo": settings.DEBUG,
         "pool_pre_ping": True,
-        "connect_args": {"statement_cache_size": 0},
     }
-    if not settings.DATABASE_URL.startswith("sqlite"):
+    if not is_sqlite:
+        # statement_cache_size is asyncpg-specific; not valid for aiosqlite
+        kwargs["connect_args"] = {"statement_cache_size": 0}
         kwargs["pool_size"] = 10
         kwargs["max_overflow"] = 20
     return kwargs
 
 
 def _create_engine(database_url: str):
-    return create_async_engine(database_url, **_engine_kwargs())
+    return create_async_engine(database_url, **_engine_kwargs(database_url))
 
 
 engine = _create_engine(settings.DATABASE_URL)

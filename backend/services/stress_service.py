@@ -1,8 +1,11 @@
 """Stress test service - orchestrates historical scenario and custom shock tests."""
 
 import asyncio
+import logging
+from pathlib import Path
 from uuid import UUID
 
+import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.errors import AppError
@@ -21,12 +24,39 @@ from backend.schemas.stress import (
 )
 from backend.services.portfolio_service import load_portfolio_snapshot
 
-# Days of history needed to cover GFC window starting 2008-09-01
-# We fetch from 2007-01-01 to have buffer for price-at-start lookups
-_STRESS_HISTORY_DAYS = 6500  # ~18 years covers 2007 onwards
+logger = logging.getLogger(__name__)
+
+# Days needed for recent scenarios (COVID 2020, Rate Hike 2022): ~5 years is enough
+_RECENT_HISTORY_DAYS = 1825  # 5 years
+# Days needed to cover GFC (2008-2009): ~18 years
+_GFC_HISTORY_DAYS = 6500
+
+# Scenarios that require long history (pre-2018)
+_LONG_HISTORY_SCENARIOS = {"GFC"}
 
 # Proxy tickers always needed for scenario proxying
 _PROXY_TICKERS = list(set(PROXY_MAP.values()))  # SPY, BTC-USD, GLD, AGG
+
+
+def _load_from_parquet_cache(ticker: str) -> pd.DataFrame | None:
+    """Try to load price data from local parquet cache files."""
+    cache_dir = Path("backend/data/cache")
+    if not cache_dir.exists():
+        return None
+    stem = ticker.replace(".", "_")
+    matches = sorted(cache_dir.glob(f"{stem}_*.parquet"))
+    if not matches:
+        return None
+    try:
+        df = pd.read_parquet(matches[-1])
+        df.columns = [c.lower() for c in df.columns]
+        df.index = pd.to_datetime(df.index)
+        if df.index.tz is not None:
+            df.index = df.index.tz_localize(None)
+        return df.sort_index()
+    except Exception as exc:
+        logger.warning("Failed to load parquet cache for %s: %s", ticker, exc)
+        return None
 
 
 async def run_stress_test(
@@ -44,17 +74,49 @@ async def run_stress_test(
     quantities = {row["ticker"]: float(row["quantity"]) for row in holdings}
     asset_currencies = {ticker: asset_map[ticker]["currency"] for ticker in tickers}
 
-    # Fetch long price history for all holdings + proxies
-    all_tickers_to_fetch = list(set(tickers + _PROXY_TICKERS))
-    price_results = await asyncio.gather(
-        *[fetcher.get_price_history(t, "yahoo", days=_STRESS_HISTORY_DAYS) for t in all_tickers_to_fetch],
-        return_exceptions=True,
-    )
-    price_data = {
-        ticker: frame
-        for ticker, frame in zip(all_tickers_to_fetch, price_results)
-        if not isinstance(frame, Exception) and not frame.empty
-    }
+    # Strategy: load price data efficiently.
+    # 1. Try local parquet cache first (fast, covers 2018-now for recent scenarios).
+    # 2. For tickers not in cache, fetch ~5 years from network (covers COVID and 2022).
+    # 3. For GFC scenario (2008-2009), ALL holdings fall back to proxies (pre-2018).
+    #    Fetch only the long-lived proxy tickers (SPY, GLD, AGG) with long history.
+    price_data: dict[str, pd.DataFrame] = {}
+
+    # Step 1: load from parquet cache (portfolio holdings + recent proxies)
+    all_tickers_needed = list(set(tickers + _PROXY_TICKERS))
+    for t in all_tickers_needed:
+        cached_df = _load_from_parquet_cache(t)
+        if cached_df is not None and not cached_df.empty:
+            price_data[t] = cached_df
+
+    # Step 2: fetch missing tickers from network (5 years, covers COVID + 2022)
+    missing_recent = [t for t in all_tickers_needed if t not in price_data]
+    if missing_recent:
+        recent_results = await asyncio.gather(
+            *[fetcher.get_price_history(t, "yahoo", days=_RECENT_HISTORY_DAYS) for t in missing_recent],
+            return_exceptions=True,
+        )
+        for t, frame in zip(missing_recent, recent_results):
+            if not isinstance(frame, Exception) and frame is not None and not frame.empty:
+                price_data[t] = frame
+
+    # Step 3: for GFC scenario, fetch SPY and GLD with long history (pre-2018).
+    # BTC-USD did not exist in 2008 so skip it.
+    gfc_scenario = next((s for s in HISTORICAL_SCENARIOS if s["name"] == "GFC"), None)
+    if gfc_scenario:
+        gfc_start = pd.Timestamp(gfc_scenario["start"])
+        long_proxies = [t for t in _PROXY_TICKERS if t not in ("BTC-USD",)]
+        long_fetch_needed = [
+            t for t in long_proxies
+            if t not in price_data or price_data[t].index.min() > gfc_start
+        ]
+        if long_fetch_needed:
+            long_results = await asyncio.gather(
+                *[fetcher.get_price_history(t, "yahoo", days=_GFC_HISTORY_DAYS) for t in long_fetch_needed],
+                return_exceptions=True,
+            )
+            for t, frame in zip(long_fetch_needed, long_results):
+                if not isinstance(frame, Exception) and frame is not None and not frame.empty:
+                    price_data[t] = frame
 
     # Get USD/INR rate and live prices for weight computation
     usd_inr = await fetcher.get_usd_inr_rate()

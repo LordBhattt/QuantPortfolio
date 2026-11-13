@@ -1,60 +1,80 @@
 # docs/ABLATION.md
 
-## Ablation Study
+## Ablation Study: Proper 60/40 Holdout
 
-Configuration tested on the seeded demo portfolio (INR 80,000, 5 asset classes) using the
-Backtest Lab engine with a 3-year monthly walk-forward window (2022-01 to 2024-12).
-SPY is the benchmark reference. All strategies start at INR 100,000.
+Configs were chosen on the **first 60% of the data** (train window) and all metrics below
+are reported on the **last 40% only** (held-out test window). There is no look-ahead.
+
+### Data and Window
+
+| Field | Value |
+|---|---|
+| Universe | RELIANCE.NS (stock), BTC-USD (crypto), GLD (gold), TLT (bond) |
+| Full window | 2018-01-01 to 2026-11-12 (3,238 trading days) |
+| Train (60%) | 2018-01-01 to 2023-04-26 (1,942 days) -- config selection only |
+| Test (40%) | 2023-04-27 to 2026-11-12 (1,296 days) -- all numbers reported here |
+| Rebalance | Monthly walk-forward, no look-ahead |
+| Starting value | INR 100,000 |
+| Cost | 10 bps per rebalance |
 
 GBM OOS IC = 0.0173, t-stat = 0.61 -- gate not passed (threshold: IC > 0.02 and t > 2).
-When ML = ON below, the GBM model is loaded but its weight in BL confidence is 0 because the
-gate failed. The effective difference vs ML OFF is negligible; the row is included for
-transparency.
 
 ---
 
-### Ablation Table: Optimized Strategy Only
+### Ablation Table: Held-out Test Set (2023-04-27 to 2026-11-12)
 
-| Config | ML | Floor | Regime | CAGR | Vol | Sharpe | Max DD | Calmar |
-|---|---|---|---|---|---|---|---|---|
-| A: all off | off | off | off | see note | see note | see note | see note | see note |
-| B: floor only | off | on | off | +1-3% vs A | lower | higher | shallower | higher |
-| C: regime only | off | off | on | regime-aware tilt | adaptive | depends on window | usually shallower | higher |
-| D: floor + regime (default) | off | on | on | best combination | adaptive | best Sharpe | best | best Calmar |
-| E: all on | on | on | on | same as D (gate failed) | same | same | same | same |
+All numbers come from `backend/scripts/ablation_holdout.py` run on 2026-11-12.
 
-> [!NOTE]
-> The Backtest Lab uses live market data fetched at run time. Because market data can vary by
-> run date, exact numbers are intentionally omitted here. Run the app as the demo user, go to
-> /backtest, and set ML ON vs OFF with floor and regime toggles to reproduce the ablation
-> interactively. The regime history chart on the Dashboard shows which regime each day was
-> classified as.
+| Config | ML | Floor | Regime | CAGR | Vol | Sharpe | Max DD | Calmar | Profit (INR) |
+|---|---|---|---|---|---|---|---|---|---|
+| A: all off | off | off | off | -7.1% | 13.3% | -1.02 | -13.6% | -0.53 | -7,132 |
+| B: floor only | off | on | off | -7.1% | 13.3% | -1.02 | -13.6% | -0.53 | -7,132 |
+| C: regime only | off | off | on | -7.1% | 13.3% | -1.02 | -13.6% | -0.53 | -7,132 |
+| D: floor + regime (default) | off | on | on | -7.1% | 13.3% | -1.02 | -13.6% | -0.53 | -7,132 |
+| E: all on (ML + floor + regime) | on | on | on | -7.1% | 13.3% | -1.02 | -13.6% | -0.53 | -7,132 |
+| **Equal Weight** | - | - | - | **-7.1%** | 13.3% | -1.02 | -13.6% | -0.53 | -7,132 |
+| **SPY (benchmark)** | - | - | - | **+13.5%** | 11.1% | +0.58 | -6.6% | +2.04 | +13,482 |
+
+> [!IMPORTANT]
+> **All five optimizer configs produce identical results on the held-out test set.**
+> The optimizer converges to equal weight for this 4-asset universe regardless of floor or
+> regime toggle. No config beats Equal Weight. SPY outperformed every strategy by a wide margin:
+> +13.5% CAGR vs -7.1% CAGR on the test window.
+>
+> This is an honest result. The optimizer adds no alpha on this small universe in this window.
 
 ---
 
-### Key Finding
+### Key Findings
 
-Row D (floor ON, regime ON, ML OFF) is the best out-of-sample configuration:
+1. **Floor and regime toggles make zero measurable difference** on this small 4-asset
+   portfolio. The optimizer converges to equal weight in all cases. The toggles are theoretically
+   sound but require a larger, more heterogeneous universe to show a difference.
 
-- The floor prevents structurally negative expected returns in bear regimes, which otherwise
-  cause the optimizer to over-concentrate in a single asset.
-- Regime detection shifts the covariance scaling and BL weight dynamically, reducing max
-  drawdown in bear periods.
-- The GBM model did not pass the gate (IC = 0.0173, t = 0.61 vs threshold IC > 0.02, t > 2).
-  Enabling it has no practical effect since BL confidence is set to 0 when gate_passed = false.
+2. **No config beats Equal Weight** on the held-out period. Reporting this honestly.
+
+3. **SPY outperformed all strategies**: +13.5% CAGR vs -7.1%. This was a period of strong US
+   equities (2023-2026) with weaker performance from crypto, gold, and bonds as a group.
+
+4. **GBM ML model did not pass the gate** (IC 0.0173 vs threshold 0.02; t 0.61 vs threshold 2).
+   Enabling ML is effectively a no-op in the optimizer.
 
 ---
 
 ### Defaults Set
 
-Based on the ablation, the application defaults are:
+Based on the ablation, **no config is demonstrably better** on the held-out set.
+Config D (floor ON, regime ON, ML OFF) is kept as the default because:
+- It is not worse than any alternative on the test set.
+- It is theoretically sound (prevents negative-drift returns, adapts covariance to regime).
+- On larger or more diverse portfolios it is expected to show benefit.
+
+Defaults:
 
 - `use_regime_scaling = True`
 - `EXPECTED_RETURN_FLOOR_ENABLED = True`
 - `ML_FORECASTER_VERSION = "gbm"` (loaded but gate-disabled; shown as "ML not used" in UI)
 - `use_lstm_forecasts = True` (accepted for backward compat; real model is GBM or none)
-
-These defaults match configuration D above.
 
 ---
 
@@ -79,8 +99,7 @@ historical reference but is not used in the default pipeline.
 ### How to Reproduce
 
 1. Seed the demo portfolio: `python backend/scripts/seed_demo_portfolio.py`
-2. Start backend and frontend.
-3. Log in as demo@quantportfolio.in / Demo@1234.
-4. Go to /backtest.
-5. Set 3Y, monthly, risk 0.5. Toggle ML and regime to compare rows.
-6. The metrics table highlights the best column in blue -- check Sharpe and Calmar columns.
+2. Run the ablation script: `python backend/scripts/ablation_holdout.py`
+3. The script prints train-window metrics (config selection) and test-window metrics (reported above).
+4. To see the ablation interactively: start backend and frontend, log in as demo@quantportfolio.in,
+   go to /backtest, set 3Y monthly, and toggle ML and regime to compare strategies.
