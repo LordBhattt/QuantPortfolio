@@ -57,6 +57,22 @@ Open: http://localhost:5173
 5. Toggle ML Forecast ON to see the effect (gate not passed so difference is minimal --
    that is the honest result; the UI badge on the Optimize page will say "ML not used").
 
+#### Live 3-year talking points (run 2026-11-13)
+
+The seeded demo portfolio was run with monthly rebalancing, risk tolerance 0.5, 10 bps
+transaction costs, and ML OFF. These are live-data results, so they will change as the
+market window advances:
+
+| Strategy | Profit (INR) | Sharpe | Max drawdown |
+|---|---:|---:|---:|
+| Optimized | +16,728.58 | -0.09 | -23.41% |
+| Equal Weight | +29,590.99 | +0.22 | -19.89% |
+| Buy and Hold | +9,962.58 | -0.25 | -21.70% |
+| SPY | +66,598.47 | +0.78 | -18.76% |
+
+The unflattering result is important: Optimized underperformed Equal Weight by INR 12,862.41
+and SPY by INR 49,869.89 over this window.
+
 ---
 
 ### Step 3 (60 seconds): Risk + Stress Test (/risk)

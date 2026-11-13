@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 _RECENT_HISTORY_DAYS = 1825  # 5 years
 # Days needed to cover GFC (2008-2009): ~18 years
 _GFC_HISTORY_DAYS = 6500
+_LONG_FETCH_TIMEOUT_SECONDS = 8
 
 # Scenarios that require long history (pre-2018)
 _LONG_HISTORY_SCENARIOS = {"GFC"}
@@ -40,7 +41,7 @@ _PROXY_TICKERS = list(set(PROXY_MAP.values()))  # SPY, BTC-USD, GLD, AGG
 
 def _load_from_parquet_cache(ticker: str) -> pd.DataFrame | None:
     """Try to load price data from local parquet cache files."""
-    cache_dir = Path("backend/data/cache")
+    cache_dir = Path(__file__).resolve().parents[1] / "data" / "cache"
     if not cache_dir.exists():
         return None
     stem = ticker.replace(".", "_")
@@ -88,16 +89,26 @@ async def run_stress_test(
         if cached_df is not None and not cached_df.empty:
             price_data[t] = cached_df
 
-    # Step 2: fetch missing tickers from network (5 years, covers COVID + 2022)
-    missing_recent = [t for t in all_tickers_needed if t not in price_data]
+    # Step 2: fetch only missing proxies from network (holdings can use class proxies)
+    missing_recent = [t for t in _PROXY_TICKERS if t not in price_data]
     if missing_recent:
+        async def fetch_recent_history(ticker: str) -> pd.DataFrame | Exception:
+            try:
+                return await asyncio.wait_for(
+                    fetcher.get_price_history(ticker, "yahoo", days=_RECENT_HISTORY_DAYS),
+                    timeout=_LONG_FETCH_TIMEOUT_SECONDS,
+                )
+            except Exception as exc:
+                return exc
+
         recent_results = await asyncio.gather(
-            *[fetcher.get_price_history(t, "yahoo", days=_RECENT_HISTORY_DAYS) for t in missing_recent],
-            return_exceptions=True,
+            *[fetch_recent_history(t) for t in missing_recent],
         )
         for t, frame in zip(missing_recent, recent_results):
             if not isinstance(frame, Exception) and frame is not None and not frame.empty:
                 price_data[t] = frame
+            elif isinstance(frame, Exception):
+                logger.warning("Recent stress history unavailable for %s: %s", t, frame)
 
     # Step 3: for GFC scenario, fetch SPY and GLD with long history (pre-2018).
     # BTC-USD did not exist in 2008 so skip it.
@@ -110,31 +121,45 @@ async def run_stress_test(
             if t not in price_data or price_data[t].index.min() > gfc_start
         ]
         if long_fetch_needed:
+            async def fetch_long_history(ticker: str) -> pd.DataFrame | Exception:
+                try:
+                    return await asyncio.wait_for(
+                        fetcher.get_price_history(ticker, "yahoo", days=_GFC_HISTORY_DAYS),
+                        timeout=_LONG_FETCH_TIMEOUT_SECONDS,
+                    )
+                except Exception as exc:
+                    return exc
+
             long_results = await asyncio.gather(
-                *[fetcher.get_price_history(t, "yahoo", days=_GFC_HISTORY_DAYS) for t in long_fetch_needed],
-                return_exceptions=True,
+                *[fetch_long_history(t) for t in long_fetch_needed],
             )
             for t, frame in zip(long_fetch_needed, long_results):
                 if not isinstance(frame, Exception) and frame is not None and not frame.empty:
                     price_data[t] = frame
+                elif isinstance(frame, Exception):
+                    logger.warning("Long stress history unavailable for %s: %s", t, frame)
 
     # Get USD/INR rate and live prices for weight computation
     usd_inr = await fetcher.get_usd_inr_rate()
     live_prices_inr = {}
     if hasattr(fetcher, "get_latest_prices_in_inr"):
         try:
-            live_prices_inr = await fetcher.get_latest_prices_in_inr(
-                [
-                    {
-                        "ticker": ticker,
-                        "source": asset_map[ticker]["data_source"],
-                        "exchange": asset_map[ticker].get("exchange"),
-                        "currency": asset_currencies[ticker],
-                    }
-                    for ticker in tickers
-                ]
+            live_prices_inr = await asyncio.wait_for(
+                fetcher.get_latest_prices_in_inr(
+                    [
+                        {
+                            "ticker": ticker,
+                            "source": asset_map[ticker]["data_source"],
+                            "exchange": asset_map[ticker].get("exchange"),
+                            "currency": asset_currencies[ticker],
+                        }
+                        for ticker in tickers
+                    ]
+                ),
+                timeout=_LONG_FETCH_TIMEOUT_SECONDS,
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning("Live quote refresh unavailable during stress test: %s", exc)
             live_prices_inr = {}
 
     # Compute current values in INR for each holding

@@ -60,3 +60,26 @@ def test_constrained_mvo_respects_asset_class_bounds() -> None:
     assert weights["AAA"] <= 0.60
     assert weights["BBB"] <= 0.20
     assert weights["CCC"] >= 0.20
+
+
+def test_constrained_mvo_relaxes_present_class_maxes_when_classes_are_missing() -> None:
+    constraints = PortfolioConstraints.model_validate(
+        {
+            "stocks": {"min": 0.10, "max": 0.50},
+            "crypto": {"min": 0.05, "max": 0.20},
+            "gold": {"min": 0.05, "max": 0.20},
+            "mf_etf": {"min": 0.05, "max": 0.30},
+            "bonds": {"min": 0.10, "max": 0.30},
+        }
+    )
+
+    weights = constrained_mvo(
+        mu=np.array([0.10, 0.08, 0.06]),
+        cov=np.eye(3) * 0.02,
+        tickers=["AAA", "BTC", "GLD"],
+        asset_classes=["stock", "crypto", "gold"],
+        constraints=constraints,
+        risk_tolerance=0.5,
+    )
+
+    assert pytest.approx(sum(weights.values()), rel=1e-6) == 1.0

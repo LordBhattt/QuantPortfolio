@@ -1,11 +1,14 @@
 """Constrained mean-variance optimization."""
 
+import logging
 from typing import Optional
 
 import cvxpy as cp
 import numpy as np
 
 from backend.schemas.optimization import FrontierPoint, PortfolioConstraints
+
+logger = logging.getLogger(__name__)
 
 
 def constrained_mvo(
@@ -53,6 +56,15 @@ def constrained_mvo(
                         can_apply = False
                         break
                 if can_apply:
+                    present_max_capacity = 0.0
+                    for schema_name, bounds in class_map.items():
+                        asset_class = aliases.get(schema_name)
+                        matching = [idx for idx, name in enumerate(asset_classes) if name == asset_class]
+                        if matching:
+                            present_max_capacity += min(bounds["max"], len(matching) * cap)
+                    if present_max_capacity < 1.0:
+                        can_apply = False
+                if can_apply:
                     constraints_list.append(weights <= cap)
 
     if constraints is not None:
@@ -72,7 +84,22 @@ def constrained_mvo(
     if last_error is not None:
         raise ValueError(f"optimization failed: {last_error}") from last_error
     if problem.status not in {cp.OPTIMAL, cp.OPTIMAL_INACCURATE}:
-        raise ValueError(f"optimization failed: {problem.status}")
+        logger.warning(
+            "MVO objective was %s; retrying with a feasibility objective (assets=%d, classes=%s)",
+            problem.status,
+            n_assets,
+            asset_classes,
+        )
+        feasibility_problem = cp.Problem(cp.Minimize(cp.sum_squares(weights)), constraints_list)
+        for solver in (cp.CLARABEL, cp.OSQP, cp.SCS):
+            try:
+                feasibility_problem.solve(solver=solver, verbose=False)
+                if feasibility_problem.status in {cp.OPTIMAL, cp.OPTIMAL_INACCURATE}:
+                    break
+            except Exception:
+                continue
+        if feasibility_problem.status not in {cp.OPTIMAL, cp.OPTIMAL_INACCURATE}:
+            raise ValueError(f"optimization failed: {problem.status}")
 
     resolved = np.array(weights.value).clip(0, 1)
     total = resolved.sum()
@@ -147,7 +174,7 @@ def _build_class_constraints(weights: cp.Variable, asset_classes: list[str], con
     # If the sum of present-class maxes is less than 1.0, the constraints would be
     # infeasible (weights must sum to 1 but no room for the residual). Scale maxes up.
     total_max = sum(b["max"] for b in class_bounds.values())
-    max_scale = max(1.0, 1.0 / total_max) if total_max > 0 else 1.0
+    max_scale = max(1.0, (1.0 + 1e-6) / total_max) if total_max > 0 else 1.0
 
     for asset_class, indexes in present.items():
         bounds = class_bounds[asset_class]

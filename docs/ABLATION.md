@@ -33,12 +33,15 @@ All numbers come from `backend/scripts/ablation_holdout.py` run on 2026-11-12.
 | D: floor + regime (default) | off | on | on | -7.1% | 13.3% | -1.02 | -13.6% | -0.53 | -7,132 |
 | E: all on (ML + floor + regime) | on | on | on | -7.1% | 13.3% | -1.02 | -13.6% | -0.53 | -7,132 |
 | **Equal Weight** | - | - | - | **-7.1%** | 13.3% | -1.02 | -13.6% | -0.53 | -7,132 |
+| **Buy and Hold** | - | - | - | **-7.1%** | 13.3% | -1.02 | -13.6% | -0.53 | -7,132 |
 | **SPY (benchmark)** | - | - | - | **+13.5%** | 11.1% | +0.58 | -6.6% | +2.04 | +13,482 |
 
 > [!IMPORTANT]
-> **All five optimizer configs produce identical results on the held-out test set.**
+> **All five listed configurations produce identical results on the held-out test set.**
 > The optimizer converges to equal weight for this 4-asset universe regardless of floor or
-> regime toggle. No config beats Equal Weight. SPY outperformed every strategy by a wide margin:
+> regime toggle; the ML-on row is identical because the model gate is off. Config A is the
+> deterministic tie-break winner among the four tested by the script on both train and test,
+> but no config beats Equal Weight. SPY outperformed every strategy by a wide margin:
 > +13.5% CAGR vs -7.1% CAGR on the test window.
 >
 > This is an honest result. The optimizer adds no alpha on this small universe in this window.

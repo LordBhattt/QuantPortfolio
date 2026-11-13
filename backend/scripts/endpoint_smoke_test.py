@@ -117,7 +117,9 @@ def main() -> dict | None:
         diagnostics_ok = False
         if isinstance(opt, dict):
             diag = opt.get("diagnostics")
-            print(f"     Regime: {opt.get('regime','?')}  Sharpe: {opt.get('sharpe_ratio','?'):.2f}")
+            sharpe = opt.get("sharpe_ratio")
+            sharpe_text = f"{sharpe:.2f}" if isinstance(sharpe, (int, float)) else str(sharpe or "?")
+            print(f"     Regime: {opt.get('regime','?')}  Sharpe: {sharpe_text}")
             if diag:
                 print(f"     Diagnostics: model_kind={diag.get('model_kind','?')}, per_asset={len(diag.get('per_asset',[]))}")
                 diagnostics_ok = True

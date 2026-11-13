@@ -224,17 +224,20 @@ async def run_optimization(
     asset_currencies = {ticker: asset_map[ticker]["currency"] for ticker in tickers}
     asset_classes = [asset_map[ticker]["asset_class"].value for ticker in tickers]
 
-    price_results = await asyncio.gather(
-        *[
-            fetcher.get_price_history(
-                ticker=ticker,
-                source=asset_map[ticker]["data_source"],
-                days=settings.MVO_ROLLING_WINDOW_DAYS + 30,
+    async def fetch_history(ticker: str) -> Any:
+        try:
+            return await asyncio.wait_for(
+                fetcher.get_price_history(
+                    ticker=ticker,
+                    source=asset_map[ticker]["data_source"],
+                    days=settings.MVO_ROLLING_WINDOW_DAYS + 30,
+                ),
+                timeout=8,
             )
-            for ticker in tickers
-        ],
-        return_exceptions=True,
-    )
+        except Exception as exc:
+            return exc
+
+    price_results = await asyncio.gather(*[fetch_history(ticker) for ticker in tickers])
     price_data = {
         ticker: frame
         for ticker, frame in zip(tickers, price_results)
@@ -311,21 +314,25 @@ async def run_optimization(
     )
 
     # Compute current values + rebalancing
-    live_prices_inr = (
-        await fetcher.get_latest_prices_in_inr(
-            [
-                {
-                    "ticker": ticker,
-                    "source": asset_map[ticker]["data_source"],
-                    "exchange": asset_map[ticker].get("exchange"),
-                    "currency": asset_currencies[ticker],
-                }
-                for ticker in tickers
-            ]
-        )
-        if hasattr(fetcher, "get_latest_prices_in_inr")
-        else {}
-    )
+    live_prices_inr: dict[str, float] = {}
+    if hasattr(fetcher, "get_latest_prices_in_inr"):
+        try:
+            live_prices_inr = await asyncio.wait_for(
+                fetcher.get_latest_prices_in_inr(
+                    [
+                        {
+                            "ticker": ticker,
+                            "source": asset_map[ticker]["data_source"],
+                            "exchange": asset_map[ticker].get("exchange"),
+                            "currency": asset_currencies[ticker],
+                        }
+                        for ticker in tickers
+                    ]
+                ),
+                timeout=8,
+            )
+        except Exception as exc:
+            logger.warning("Live quote refresh unavailable during optimization: %s", exc)
     current_values: dict[str, float] = {}
     for ticker in tickers:
         live_price_inr = live_prices_inr.get(ticker)
