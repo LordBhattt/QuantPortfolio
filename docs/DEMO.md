@@ -150,7 +150,7 @@ Backtest results are historical and are not a guarantee of future returns.
 
 ### Step 5 (30 seconds): Summary for the invigilator
 
-- All numbers come from live API calls: no hardcoded demo values anywhere.
+- All displayed portfolio numbers come from live API calls; unused development fixtures are not part of the application bundle.
 - Bad results are shown honestly: GBM IC = 0.0173 did not pass the gate; displayed as
   "ML not used".
 - P&L is real: buy prices were fetched from yfinance 12 months ago at seed time.

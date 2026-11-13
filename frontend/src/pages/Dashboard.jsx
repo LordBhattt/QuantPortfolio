@@ -38,9 +38,10 @@ export default function Dashboard() {
   const [range, setRange] = useState("3M");
   const [chartTab, setChartTab] = useState("benchmark");
 
-  const { data: analytics, loading: analyticsLoading, error: analyticsError } = useAnalytics(portfolioId);
   const { data: holdings, loading: holdingsLoading } = useHoldings(portfolioId);
-  const { data: risk, loading: riskLoading } = useRiskMetrics(portfolioId);
+  const hasHoldings = Boolean(holdings?.length);
+  const { data: analytics, loading: analyticsLoading, error: analyticsError } = useAnalytics(portfolioId, hasHoldings);
+  const { data: risk, loading: riskLoading } = useRiskMetrics(portfolioId, hasHoldings);
 
   const heroLoading = Boolean(portfolioId) && analyticsLoading;
   const summaryLoading = Boolean(portfolioId) && analyticsLoading;
@@ -177,7 +178,7 @@ export default function Dashboard() {
                   )}
                 </div>
               ) : (
-                <EmptyState title="Benchmark data unavailable" subtitle="We couldn’t load the 6M benchmark comparison yet." />
+                <EmptyState title="Add your first holding to see performance" subtitle="Your live benchmark comparison will appear here after you add a holding." />
               )
             ) : (
               perf.length > 0 ? (

@@ -6,6 +6,7 @@ import PageWrapper from "../components/layout/PageWrapper";
 import Card from "../components/ui-qp/Card";
 import EmptyState from "../components/ui-qp/EmptyState";
 import { useMonteCarlo, useRiskMetrics } from "../hooks/useRisk";
+import { useHoldings } from "../hooks/usePortfolio";
 import { usePortfolioStore } from "../store/portfolioStore";
 import { formatINR, formatPct } from "../utils/format";
 import { ProbabilityCard } from "../components/dashboard/StatCards";
@@ -23,11 +24,13 @@ function SkeletonBlock({ className }) {
 export default function Risk() {
   const portfolioId = usePortfolioStore((s) => s.portfolioId);
   const [horizon, setHorizon] = useState("1Y");
+  const { data: holdings, loading: holdingsLoading } = useHoldings(portfolioId);
+  const hasHoldings = Boolean(holdings?.length);
 
-  const { data: risk, loading: riskLoading, error: riskError } = useRiskMetrics(portfolioId);
-  const { data: mc, loading: mcLoading, error: mcError } = useMonteCarlo(portfolioId, N_PATHS, HORIZON_DAYS[horizon]);
+  const { data: risk, loading: riskLoading, error: riskError } = useRiskMetrics(portfolioId, hasHoldings);
+  const { data: mc, loading: mcLoading, error: mcError } = useMonteCarlo(portfolioId, N_PATHS, HORIZON_DAYS[horizon], hasHoldings);
 
-  const isLoading = portfolioId && (riskLoading || mcLoading);
+  const isLoading = portfolioId && (holdingsLoading || riskLoading || mcLoading);
   const probLoss = (mc?.prob_loss ?? 0) * 100;
   const probProfit = Math.max(0, 100 - probLoss);
   const matrix = risk?.correlation_matrix || {};
@@ -150,7 +153,7 @@ export default function Risk() {
       )}
 
       {/* Stress Test Section */}
-      {portfolioId && <StressTestSection portfolioId={portfolioId} />}
+      {portfolioId && hasHoldings && <StressTestSection portfolioId={portfolioId} />}
     </PageWrapper>
   );
 }
@@ -243,12 +246,17 @@ function StressTestSection({ portfolioId }) {
               </h3>
               <ResponsiveContainer width="100%" height={Math.max(180, active.per_holding.length * 36)}>
                 <BarChart
-                  data={[...active.per_holding].sort((a, b) => a.portfolio_contribution_pct - b.portfolio_contribution_pct)}
+                  data={[...active.per_holding]
+                    .sort((a, b) => a.portfolio_contribution_pct - b.portfolio_contribution_pct)
+                    .map((holding) => ({
+                      ...holding,
+                      displayTicker: holding.is_proxy ? `${holding.ticker}, proxy: ${holding.proxy_ticker}` : holding.ticker,
+                    }))}
                   layout="vertical"
                   margin={{ top: 4, right: 24, left: 60, bottom: 4 }}
                 >
                   <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `${v.toFixed(1)}%`} />
-                  <YAxis dataKey="ticker" type="category" tick={{ fontSize: 10 }} width={60} />
+                  <YAxis dataKey="displayTicker" type="category" tick={{ fontSize: 10 }} width={120} />
                   <Tooltip formatter={(v) => [`${v.toFixed(2)}%`, "Portfolio contribution"]} />
                   <Bar dataKey="portfolio_contribution_pct" radius={[0, 4, 4, 0]}>
                     {active.per_holding.map((h) => (
@@ -259,7 +267,7 @@ function StressTestSection({ portfolioId }) {
               </ResponsiveContainer>
               {active.per_holding.some((h) => h.is_proxy) && (
                 <p className="text-xs text-amber-600 mt-2">
-                  * Some holdings use proxy data (asset had no history in this window)
+                  Proxy labels identify holdings whose own price history was unavailable in this window.
                 </p>
               )}
             </Card>
@@ -300,7 +308,14 @@ function StressTestSection({ portfolioId }) {
               <tbody>
                 {(customResult.per_holding || []).map((h) => (
                   <tr key={h.ticker} className="border-t border-gray-100">
-                    <td className="py-1 font-mono">{h.ticker}</td>
+                    <td className="py-1 font-mono">
+                      <span>{h.ticker}</span>
+                      {h.is_proxy && (
+                        <span className="ml-2 inline-flex rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700" title="The asset had no price history in this window.">
+                          proxy: {h.proxy_ticker}
+                        </span>
+                      )}
+                    </td>
                     <td className="py-1 text-right">{(h.weight * 100).toFixed(1)}%</td>
                     <td className={`py-1 text-right font-mono ${h.shock_pct < 0 ? "text-red-600" : "text-emerald-600"}`}>{h.shock_pct >= 0 ? "+" : ""}{h.shock_pct.toFixed(1)}%</td>
                     <td className={`py-1 text-right font-mono ${h.portfolio_contribution_pct < 0 ? "text-red-600" : "text-emerald-600"}`}>{h.portfolio_contribution_pct >= 0 ? "+" : ""}{h.portfolio_contribution_pct.toFixed(2)}%</td>

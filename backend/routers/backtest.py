@@ -25,7 +25,7 @@ limiter = Limiter(key_func=get_remote_address)
 
 @router.post("/", response_model=BacktestResponse)
 @router.post("", response_model=BacktestResponse, include_in_schema=False)
-@limiter.limit("3/minute")
+@limiter.limit("20/minute")
 async def run_backtest_endpoint(
     request: Request,
     payload: BacktestRequest,

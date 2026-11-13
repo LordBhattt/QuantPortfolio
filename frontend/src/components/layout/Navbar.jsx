@@ -101,21 +101,21 @@ export default function Navbar() {
   };
 
   return (
-    <nav className="sticky top-0 z-40 h-14 bg-white/90 backdrop-blur-sm border-b border-black/[0.06] flex items-center px-6 gap-6">
-      <div className="flex items-center gap-2">
+    <nav className="sticky top-0 z-40 h-14 min-w-0 bg-white/90 backdrop-blur-sm border-b border-black/[0.06] flex items-center px-3 sm:px-6 gap-2 sm:gap-6 overflow-hidden">
+      <div className="flex min-w-0 shrink items-center gap-2">
         <div className="w-7 h-7 rounded-md bg-gray-900 flex items-center justify-center">
           <span className="text-white font-mono text-xs font-semibold">Q</span>
         </div>
-        <span className="font-sans font-semibold text-sm tracking-tight text-gray-900">QuantPortfolio</span>
+        <span className="hidden sm:inline font-sans font-semibold text-sm tracking-tight text-gray-900">QuantPortfolio</span>
       </div>
 
       <div ref={portfolioRef} className="relative">
         <button
           onClick={() => setPortfolioOpen((value) => !value)}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-black/[0.08] bg-white hover:bg-black/[0.03] transition-colors"
+          className="flex max-w-[150px] items-center gap-2 px-3 py-1.5 rounded-full border border-black/[0.08] bg-white hover:bg-black/[0.03] transition-colors"
         >
           <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-          <span className="font-sans text-xs font-medium text-gray-900">{activePortfolioName}</span>
+          <span className="truncate font-sans text-xs font-medium text-gray-900">{activePortfolioName}</span>
           <ChevronDown className="text-gray-400" />
         </button>
         {portfolioOpen && (
@@ -144,7 +144,7 @@ export default function Navbar() {
         )}
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className="hidden xl:flex items-center gap-1">
         {links.map(({ to, label }) => (
           <NavLink
             key={to}
@@ -160,7 +160,7 @@ export default function Navbar() {
         ))}
       </div>
 
-      <div className="ml-auto flex items-center gap-4">
+      <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-4">
         {regime && <Badge regime={regime} />}
 
         <div ref={alertsRef} className="relative">

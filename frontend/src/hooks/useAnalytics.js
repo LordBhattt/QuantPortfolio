@@ -6,10 +6,10 @@ function getErrorMessage(error, fallback) {
   return error?.response?.data?.detail || error?.message || fallback
 }
 
-export function useAnalytics(portfolioId) {
+export function useAnalytics(portfolioId, enabled = true) {
   const query = useQuery({
     queryKey: ['analytics', portfolioId],
-    enabled: Boolean(portfolioId),
+    enabled: Boolean(portfolioId) && enabled,
     queryFn: () => getAnalytics(portfolioId),
     staleTime: 30_000,
     refetchInterval: 30_000,

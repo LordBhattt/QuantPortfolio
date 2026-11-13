@@ -3,6 +3,7 @@ import { Loader2 } from "lucide-react";
 import { Navigate, useNavigate } from "react-router-dom";
 
 import { addHoldingsBulk, getPortfolios } from "../api/portfolios";
+import { usePortfolios } from "../hooks/usePortfolio";
 import { getPortfolioRecommendation, submitInvestorProfile, type InvestorProfilePayload, type PortfolioRecommendation } from "../api/onboarding";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -115,9 +116,9 @@ function SummaryItem({ label, value }: { label: string; value: string }) {
 
 export default function Onboarding() {
   const navigate = useNavigate();
-  const onboarded = usePortfolioStore((state) => state.onboarded);
   const setPortfolio = usePortfolioStore((state) => state.setPortfolio);
   const completeOnboarding = usePortfolioStore((state) => state.completeOnboarding);
+  const { data: portfolios = [], loading: portfoliosLoading } = usePortfolios();
 
   const [step, setStep] = useState<Step>(1);
   const [submissionVersion, setSubmissionVersion] = useState(0);
@@ -138,10 +139,13 @@ export default function Onboarding() {
   const [existingInvestments, setExistingInvestments] = useState(false);
 
   useEffect(() => {
-    if (onboarded) {
+    if (portfolios.length > 0) {
+      const firstPortfolio = portfolios[0];
+      setPortfolio(firstPortfolio.id, firstPortfolio.name);
+      completeOnboarding();
       navigate("/dashboard", { replace: true });
     }
-  }, [navigate, onboarded]);
+  }, [completeOnboarding, navigate, portfolios, setPortfolio]);
 
   useEffect(() => {
     if (step !== 4) {
@@ -202,7 +206,7 @@ export default function Onboarding() {
     return () => {
       active = false;
     };
-  }, [ageGroup, existingInvestments, incomeStability, investmentAmount, investmentHorizon, riskAppetite, step, submissionVersion]);
+  }, [ageGroup, existingInvestments, incomeStability, investmentAmount, investmentHorizon, riskAppetite, setPortfolio, step, submissionVersion]);
 
   const progress = useMemo(() => Math.min(100, (step / 5) * 100), [step]);
   const selectedRows = useMemo(
@@ -286,9 +290,7 @@ export default function Onboarding() {
     }
   };
 
-  if (onboarded) {
-    return <Navigate to="/dashboard" replace />;
-  }
+  if (portfoliosLoading) return null;
 
   return (
     <div

@@ -22,7 +22,8 @@ function isAuthFormRequest(config) {
 client.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401 && !isAuthFormRequest(err.config) && window.location.pathname !== '/login') {
+    const publicPath = ['/login', '/register'].includes(window.location.pathname)
+    if (err.response?.status === 401 && !isAuthFormRequest(err.config) && !publicPath) {
       window.location.href = '/login'
     }
     return Promise.reject(err)

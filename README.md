@@ -679,13 +679,13 @@ This section matters if you want to understand the repo as it really exists toda
 
 ### Things to know before extending it
 
-- CORS origins are currently hardcoded in `backend/main.py` for local dev hosts even though `ALLOWED_ORIGINS` exists in settings.
+- CORS origins are configurable through the `ALLOWED_ORIGINS` environment setting; local development hosts are the defaults.
 - The regime detector is trained from `SPY` history and optimization currently uses the first aligned return series as the market proxy when predicting the live regime.
 - The LSTM forecaster is optional. Missing weights do not break the API; optimization simply continues without those forecast views.
 - Portfolio `base_currency` exists in the data model, but major calculations are normalized internally and many user-facing analytics are rendered in INR.
 - The onboarding asset-class picker influences the initial user experience, but the persisted portfolio creation step currently stores name, description, base currency, and risk-profile constraints rather than a hard investable-universe filter.
 - The frontend includes a React Query provider, but most current hooks are handwritten async hooks instead of React Query-powered caches.
-- Helper scripts and migration tooling need a couple of extra Python packages that are not pinned in `backend/requirements.txt` yet.
+- Helper scripts and migration tooling use the packages pinned in `backend/requirements.txt`.
 
 ## Suggested Development Reading Order
 

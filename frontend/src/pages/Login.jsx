@@ -20,8 +20,9 @@ export default function Login() {
     setError(null)
     try {
       const user = await login({ email: email.trim(), password })
+      usePortfolioStore.getState().setAuthenticatedUser(user.id)
       queryClient.setQueryData(['current-user'], user)
-      navigate(usePortfolioStore.getState().onboarded ? '/dashboard' : '/onboarding', { replace: true })
+      navigate('/dashboard', { replace: true })
     } catch (err) {
       setError(getApiErrorMessage(err, 'Login failed'))
     } finally {

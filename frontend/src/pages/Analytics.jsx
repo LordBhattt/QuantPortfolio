@@ -5,6 +5,7 @@ import Card from "../components/ui-qp/Card";
 import EmptyState from "../components/ui-qp/EmptyState";
 import PnLPill from "../components/ui-qp/PnLPill";
 import { useAnalytics } from "../hooks/useAnalytics";
+import { useHoldings } from "../hooks/usePortfolio";
 import { mapFactorExposure } from "../lib/portfolioMappers";
 import { usePortfolioStore } from "../store/portfolioStore";
 
@@ -14,7 +15,9 @@ function SkeletonBlock({ className }) {
 
 export default function Analytics() {
   const portfolioId = usePortfolioStore((s) => s.portfolioId);
-  const { data, loading, error } = useAnalytics(portfolioId);
+  const { data: holdings, loading: holdingsLoading } = useHoldings(portfolioId);
+  const { data, loading, error } = useAnalytics(portfolioId, Boolean(holdings?.length));
+  const loadingData = holdingsLoading || loading;
 
   const factorData = mapFactorExposure(data?.factor_exposure);
   const returnAttribution = (data?.holdings_breakdown || []).map((item) => ({
@@ -40,13 +43,13 @@ export default function Analytics() {
 
   return (
     <PageWrapper title="Analytics" subtitle="Factor exposure and attribution">
-      {error && !empty && !loading && (
+      {error && !empty && !loadingData && (
         <Card className="p-4 mb-6 border border-red-200 bg-red-50">
           <p className="text-sm font-mono text-red-700">{error}</p>
         </Card>
       )}
 
-      {empty && !loading ? (
+      {(!holdingsLoading && !holdings?.length) || (empty && !loadingData) ? (
         <Card className="p-6">
           <EmptyState title="No holdings to analyze yet" subtitle="Add holdings to unlock factor exposure and attribution." />
         </Card>
@@ -63,7 +66,7 @@ export default function Analytics() {
                   R2 = {data?.factor_exposure?.r_squared?.toFixed(2) ?? "0.00"}
                 </span>
               </div>
-              {loading ? <SkeletonBlock className="h-[260px] w-full" /> : <FactorBar data={factorData} />}
+              {loadingData ? <SkeletonBlock className="h-[260px] w-full" /> : <FactorBar data={factorData} />}
             </Card>
           </div>
 
@@ -71,7 +74,7 @@ export default function Analytics() {
             <div className="animate-fadeUp opacity-0" style={{ animationDelay: "120ms" }}>
               <Card className="p-5">
                 <h2 className="text-[15px] font-sans font-semibold text-gray-900 mb-4">Return Attribution</h2>
-                {loading ? (
+                {loadingData ? (
                   <div className="space-y-3">
                     {Array.from({ length: 5 }).map((_, index) => (
                       <SkeletonBlock key={index} className="h-12 w-full" />

@@ -79,7 +79,6 @@ React/Vite frontend (SPA)
 - `dampen_crypto_volatility()` in `covariance.py`: Legacy alias, delegates to `shrink_volatility()`. Not called by any active code path — only `shrink_volatility` is used directly.
 - `compute_correlation_matrix()` in `covariance.py`: Exported but **never called** from any service or quant module.
 - `annualise_returns()`, `annualise_geometric_return()`, `annualise_volatility()` in `returns.py`: Exported but **never called** — the risk engine has its own identical private implementations (`_annualised_arithmetic_return`, `_annualised_geometric_return`, `_annualised_volatility`).
-- `lib/mockData.js` in frontend: Contains hardcoded mock data — **not imported** by any page or component. Test/dev artifact.
 - React Query provider is mounted in `App.tsx`, and `useRisk`, `useAnalytics`, `useAuth`, `useAlerts`, and `useOptimize` all use React Query. The older `usePortfolios` and `useHoldings` hooks still use manual `useEffect` + `useState` pattern (not React Query). Both patterns work, but they are inconsistent.
 - `BNB` is in the CoinGecko ID map as a default asset but has **no CoinGecko ID mapping** in `COINGECKO_ID_MAP` — it will fall back to Yahoo via `_fetch_yahoo_crypto_fallback` (which maps `BNB` → `BNB-USD`). This works but is an implicit fallback, not an explicit mapping.
 

@@ -28,7 +28,7 @@ export default function Holdings() {
   const [error, setError] = useState(null);
 
   const { data: holdings, loading, refetch } = useHoldings(portfolioId);
-  const { data: analytics, loading: analyticsLoading, refetch: refetchAnalytics } = useAnalytics(portfolioId);
+  const { data: analytics, loading: analyticsLoading, refetch: refetchAnalytics } = useAnalytics(portfolioId, Boolean(holdings?.length));
 
   const tableData = useMemo(() => mergeHoldingsWithAnalytics(holdings || [], analytics), [holdings, analytics]);
   const filtered = useMemo(() => {
@@ -115,12 +115,14 @@ export default function Holdings() {
 
           {error && <p className="mb-4 text-sm font-mono text-red-600">{error}</p>}
 
-          <HoldingsTable
-            holdings={filtered}
-            loading={Boolean(loading || analyticsLoading)}
-            onAdd={() => setDrawerOpen(true)}
-            onDelete={handleDelete}
-          />
+          <div className="min-w-0 overflow-x-auto">
+            <HoldingsTable
+              holdings={filtered}
+              loading={Boolean(loading || analyticsLoading)}
+              onAdd={() => setDrawerOpen(true)}
+              onDelete={handleDelete}
+            />
+          </div>
         </Card>
       </div>
 

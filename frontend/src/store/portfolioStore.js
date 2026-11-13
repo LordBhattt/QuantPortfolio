@@ -1,31 +1,46 @@
 import { create } from "zustand";
 
-const readOnboarded = () => {
+const onboardingKey = (userId) => `qp_onboarded:${userId}`;
+
+const readOnboarded = (userId) => {
+  if (!userId) return false;
   try {
-    return localStorage.getItem("qp_onboarded") === "true";
+    return localStorage.getItem(onboardingKey(userId)) === "true";
   } catch {
     return false;
   }
 };
 
 export const usePortfolioStore = create((set) => ({
+  userId: null,
   portfolioId: null,
   portfolioName: null,
   regime: null,
-  onboarded: typeof window !== "undefined" ? readOnboarded() : false,
+  onboarded: false,
+  setAuthenticatedUser: (userId) =>
+    set({
+      userId,
+      portfolioId: null,
+      portfolioName: null,
+      regime: null,
+      onboarded: typeof window !== "undefined" ? readOnboarded(userId) : false,
+    }),
   setPortfolio: (id, name) => set({ portfolioId: id, portfolioName: name }),
   setRegime: (regime) => set({ regime }),
   completeOnboarding: () => {
+    const userId = usePortfolioStore.getState().userId;
     try {
-      localStorage.setItem("qp_onboarded", "true");
+      if (userId) localStorage.setItem(onboardingKey(userId), "true");
     } catch {}
     set({ onboarded: true });
   },
   logout: () => {
     try {
-      localStorage.removeItem("qp_onboarded");
+      const userId = usePortfolioStore.getState().userId;
+      if (userId) localStorage.removeItem(onboardingKey(userId));
     } catch {}
     set({
+      userId: null,
       portfolioId: null,
       portfolioName: null,
       regime: null,

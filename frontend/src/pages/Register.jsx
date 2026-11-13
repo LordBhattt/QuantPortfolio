@@ -25,8 +25,9 @@ export default function Register() {
         password,
         full_name: fullName || null,
       })
+      usePortfolioStore.getState().setAuthenticatedUser(user.id)
       queryClient.setQueryData(['current-user'], user)
-      navigate(usePortfolioStore.getState().onboarded ? '/dashboard' : '/onboarding', { replace: true })
+      navigate('/onboarding', { replace: true })
     } catch (err) {
       setError(getApiErrorMessage(err, 'Registration failed'))
     } finally {

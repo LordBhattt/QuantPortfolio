@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
@@ -12,6 +12,8 @@ import RequireAuth from "./components/layout/RequireAuth.jsx";
 import OnboardingModal from "./components/onboarding/OnboardingModal.jsx";
 import NotFound from "./pages/NotFound.tsx";
 import { usePortfolioStore } from "./store/portfolioStore";
+import { useCurrentUser } from "./hooks/useAuth";
+import { usePortfolios } from "./hooks/usePortfolio";
 
 const Backtest = lazy(() => import("./pages/Backtest.jsx"));
 const Dashboard = lazy(() => import("./pages/Dashboard.jsx"));
@@ -48,21 +50,37 @@ function ProtectedShell() {
   );
 }
 
+function SessionSync() {
+  const { data: currentUser } = useCurrentUser();
+  const setAuthenticatedUser = usePortfolioStore((state) => state.setAuthenticatedUser);
+
+  useEffect(() => {
+    if (currentUser?.id) setAuthenticatedUser(currentUser.id);
+  }, [currentUser?.id, setAuthenticatedUser]);
+
+  return null;
+}
+
 function PublicPage({ children }) {
   return <Suspense fallback={<LoadingFallback />}>{children}</Suspense>;
 }
 
 function RequireOnboarding({ children }: { children: ReactNode }) {
-  const onboarded = usePortfolioStore((state) => state.onboarded);
-  if (!onboarded) {
+  const { loading: authLoading } = useCurrentUser();
+  const { data: portfolios = [], loading: portfoliosLoading, error } = usePortfolios();
+
+  if (authLoading || portfoliosLoading) return <LoadingFallback />;
+  if (error) return <div className="p-6 text-sm text-red-700">Unable to load your portfolios. Please try again.</div>;
+  if (portfolios.length === 0) {
     return <Navigate to="/onboarding" replace />;
   }
   return children;
 }
 
 function HomeRedirect() {
-  const onboarded = usePortfolioStore((state) => state.onboarded);
-  return <Navigate to={onboarded ? "/dashboard" : "/onboarding"} replace />;
+  const { data: portfolios = [], loading } = usePortfolios();
+  if (loading) return <LoadingFallback />;
+  return <Navigate to={portfolios.length > 0 ? "/dashboard" : "/onboarding"} replace />;
 }
 
 const App = () => (
@@ -71,6 +89,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <SessionSync />
         <Routes>
           <Route
             path="/login"

@@ -18,6 +18,7 @@ Regime state propagates to:
     - Risk metrics (VaR confidence adjustments)
 """
 
+import logging
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -99,10 +100,16 @@ class RegimeDetector:
             self.model = hmm.GaussianHMM(
                 n_components=self.n_states,
                 covariance_type="full",
-                n_iter=200,
+                n_iter=500,
                 random_state=42,
             )
-            self.model.fit(scaled)
+            hmm_logger = logging.getLogger("hmmlearn.base")
+            previous_level = hmm_logger.level
+            hmm_logger.setLevel(logging.ERROR)
+            try:
+                self.model.fit(scaled)
+            finally:
+                hmm_logger.setLevel(previous_level)
         else:
             self.model = GaussianMixture(
                 n_components=self.n_states,
