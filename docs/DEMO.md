@@ -75,21 +75,41 @@ The volatility model was rejected before selection (held-out MAE 0.1052 versus
 0.0502 for trailing volatility). The block-bootstrap 95% interval for QP Smart
 versus Equal Weight was [-0.0027, 0.0009], not statistically significant.
 
-#### Previous live 3-year talking points (run 2026-11-13)
+#### Final live 3-year talking points (run 2026-11-13)
 
 The seeded demo portfolio was run with monthly rebalancing, risk tolerance 0.5, 10 bps
-transaction costs, and ML OFF. These are live-data results, so they will change as the
-market window advances:
+transaction costs, and ML OFF. QP Smart selected **Hierarchical Risk Parity**
+through 2025-09-12 using train-period data only. These are live-data results, so
+they will change as the market window advances:
 
 | Strategy | Profit (INR) | Sharpe | Max drawdown |
 |---|---:|---:|---:|
-| Optimized | +16,728.58 | -0.09 | -23.41% |
-| Equal Weight | +29,590.99 | +0.22 | -19.89% |
-| Buy and Hold | +9,962.58 | -0.25 | -21.70% |
-| SPY | +66,598.47 | +0.78 | -18.76% |
+| QP Smart / Hierarchical Risk Parity | +26,148.00 | +0.23 | -12.09% |
+| Equal Weight | +26,864.30 | +0.18 | -17.23% |
+| Optimized | +20,313.40 | -0.02 | -15.04% |
+| Buy and Hold | +12,907.20 | -0.25 | -15.84% |
+| SPY | +66,598.48 | +0.78 | -18.76% |
 
-The unflattering result is important: Optimized underperformed Equal Weight by INR 12,862.41
-and SPY by INR 49,869.89 over this window.
+The unflattering result is important: QP Smart slightly underperformed Equal
+Weight by INR 716.30, while reducing maximum drawdown by 5.14 percentage points.
+SPY is a reference benchmark only and is not constrained across the portfolio's
+five asset classes.
+
+Backtest results are historical and are not a guarantee of future returns.
+
+#### If asked
+
+- **Why does SPY have higher returns?** SPY is an unconstrained single-market
+  reference benchmark. QP Smart must diversify across five asset classes and
+  obey the portfolio's class bounds.
+- **Why is ML off?** The held-out volatility model loses to trailing volatility,
+  and the return models fail their IC and t-stat gates. The UI therefore shows
+  "ML not used" rather than using an unvalidated forecast.
+- **What is a backtest?** It replays a strategy against historical prices,
+  including the configured transaction costs, to show how it would have behaved.
+- **What does walk-forward mean?** Each rebalance uses only prices available
+  before that rebalance date. Hyperparameters are selected on earlier data and
+  then frozen for the held-out period.
 
 ---
 
@@ -162,3 +182,5 @@ and SPY by INR 49,869.89 over this window.
   an annual return (wrong units). It is not used in the production pipeline.
 - Regime detection (3-state HMM) uses SPY as the market proxy. Indian-only portfolios
   may see regime mislabelling in periods where US and Indian markets diverged.
+- Registration, login, and in-app alerts are supported. No SMTP email delivery path is
+  configured in this build; configure an SMTP provider before adding email delivery.

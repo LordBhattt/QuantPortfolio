@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -14,6 +15,19 @@ from backend.quant.returns import align_returns
 from backend.schemas.analytics import BenchmarkPoint, FactorExposure, PerformanceAttribution, PerformancePoint, PortfolioAnalytics
 from backend.services.portfolio_service import load_portfolio_snapshot
 ROLLING_BENCHMARK_WINDOW_POINTS = 126
+_MARKET_DATA_TIMEOUT_SECONDS = 8
+logger = logging.getLogger(__name__)
+
+
+async def _bounded_price_history(fetcher: DataFetcher, ticker: str, source: str, days: int) -> pd.DataFrame:
+    try:
+        return await asyncio.wait_for(
+            fetcher.get_price_history(ticker, source, days=days),
+            timeout=_MARKET_DATA_TIMEOUT_SECONDS,
+        )
+    except Exception as exc:
+        logger.warning("Market data unavailable for %s: %s", ticker, exc)
+        return pd.DataFrame()
 
 
 async def get_factor_exposure(
@@ -33,13 +47,12 @@ async def get_factor_exposure(
     asset_currencies = {ticker: asset_map[ticker]["currency"] for ticker in tickers}
 
     price_results = await asyncio.gather(
-        *[fetcher.get_price_history(ticker, asset_map[ticker]["data_source"], days=365 * 2) for ticker in tickers],
-        return_exceptions=True,
+        *[_bounded_price_history(fetcher, ticker, asset_map[ticker]["data_source"], 365 * 2) for ticker in tickers],
     )
     price_data = {
         ticker: frame
         for ticker, frame in zip(tickers, price_results)
-        if not isinstance(frame, Exception) and not frame.empty
+        if not frame.empty
     }
     usd_inr = await fetcher.get_usd_inr_rate()
     returns_df = await loop.run_in_executor(None, align_returns, price_data, asset_currencies, "USD", usd_inr)
@@ -83,30 +96,34 @@ async def get_portfolio_analytics(
     asset_currencies = {ticker: asset_map[ticker]["currency"] for ticker in tickers}
 
     price_results = await asyncio.gather(
-        *[fetcher.get_price_history(ticker, asset_map[ticker]["data_source"], days=365) for ticker in tickers],
-        return_exceptions=True,
+        *[_bounded_price_history(fetcher, ticker, asset_map[ticker]["data_source"], 365) for ticker in tickers],
     )
     price_data = {
         ticker: frame
         for ticker, frame in zip(tickers, price_results)
-        if not isinstance(frame, Exception) and not frame.empty
+        if not frame.empty
     }
     usd_inr = await fetcher.get_usd_inr_rate()
-    live_prices_inr = (
-        await fetcher.get_latest_prices_in_inr(
-            [
-                {
-                    "ticker": ticker,
-                    "source": asset_map[ticker]["data_source"],
-                    "exchange": asset_map[ticker].get("exchange"),
-                    "currency": asset_currencies[ticker],
-                }
-                for ticker in tickers
-            ]
-        )
-        if hasattr(fetcher, "get_latest_prices_in_inr")
-        else {}
-    )
+    live_prices_inr = {}
+    if hasattr(fetcher, "get_latest_prices_in_inr"):
+        try:
+            live_prices_inr = await asyncio.wait_for(
+                fetcher.get_latest_prices_in_inr(
+                    [
+                        {
+                            "ticker": ticker,
+                            "source": asset_map[ticker]["data_source"],
+                            "exchange": asset_map[ticker].get("exchange"),
+                            "currency": asset_currencies[ticker],
+                        }
+                        for ticker in tickers
+                    ]
+                ),
+                timeout=_MARKET_DATA_TIMEOUT_SECONDS,
+            )
+        except Exception as exc:
+            logger.warning("Live quote refresh unavailable for analytics: %s", exc)
+            live_prices_inr = {}
     returns_df = await loop.run_in_executor(None, align_returns, price_data, asset_currencies, "USD", usd_inr)
 
     current_values: dict[str, float] = {}
@@ -204,7 +221,9 @@ async def get_portfolio_analytics(
         if not portfolio_frame.empty:
             portfolio_series = portfolio_frame.sum(axis=1)
             try:
-                benchmark_frame = await fetcher.get_price_history("SPY", "yahoo", days=365)
+                benchmark_frame = await _bounded_price_history(fetcher, "SPY", "yahoo", 365)
+                if benchmark_frame.empty:
+                    raise ValueError("benchmark history unavailable")
                 benchmark_value_series = (benchmark_frame["close"].astype(float) * usd_inr).reindex(portfolio_series.index).ffill().bfill()
                 if not benchmark_value_series.empty and benchmark_value_series.iloc[0] != 0:
                     benchmark_value_series = benchmark_value_series / benchmark_value_series.iloc[0] * portfolio_series.iloc[0]
@@ -308,8 +327,8 @@ async def _build_benchmark_series(portfolio_series: pd.Series, fetcher: DataFetc
 
     try:
         nifty_frame, sp500_frame = await asyncio.gather(
-            fetcher.get_price_history("^NSEI", "yahoo", days=183),
-            fetcher.get_price_history("SPY", "yahoo", days=183),
+            _bounded_price_history(fetcher, "^NSEI", "yahoo", 183),
+            _bounded_price_history(fetcher, "SPY", "yahoo", 183),
         )
     except Exception:
         return []

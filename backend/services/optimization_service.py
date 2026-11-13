@@ -308,7 +308,7 @@ async def run_optimization(
 
     weight_map = opt_result["weights"]
     if not request.use_regime_scaling and not request.use_lstm_forecasts and not request.user_views:
-        smart_config = SmartConfig("Inverse Volatility", "inverse_vol")
+        smart_config = SmartConfig("Hierarchical Risk Parity", "hrp")
         weight_map = smart_weights(
             returns_df,
             tickers,

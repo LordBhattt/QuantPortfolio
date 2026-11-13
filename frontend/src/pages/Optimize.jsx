@@ -38,7 +38,7 @@ export default function Optimize() {
   const canRun = Boolean(portfolioId) && !infeasible && !loading;
 
   return (
-    <PageWrapper title="Optimize" subtitle="Black-Litterman plus Mean-Variance optimization">
+    <PageWrapper title="Optimize" subtitle="QP Smart: Hierarchical Risk Parity with Black-Litterman diagnostics">
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-6">
         <div className="lg:col-span-2 animate-fadeUp opacity-0" style={{ animationDelay: "0ms" }}>
           <Card className="p-5">
@@ -81,6 +81,9 @@ export default function Optimize() {
               <div className="h-px bg-black/[0.06]" />
 
               <div className="space-y-1">
+                <p className="text-xs font-mono text-gray-500">
+                  Default QP Smart configuration: Hierarchical Risk Parity
+                </p>
                 <Toggle checked={useLstm} onCheckedChange={setUseLstm} label="ML Forecast" hint="Use learned return priors" />
                 <Toggle checked={useRegime} onCheckedChange={setUseRegime} label="Regime Scaling" hint="Adjust covariance by regime" />
               </div>

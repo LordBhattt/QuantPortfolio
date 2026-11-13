@@ -43,9 +43,20 @@ from backend.schemas.risk import MonteCarloResult, RiskMetrics
 from backend.services.portfolio_service import load_portfolio_snapshot
 
 settings = get_settings()
+_MARKET_DATA_TIMEOUT_SECONDS = 8
 
 # Module-level regime detector reference (set by optimization_service.init_ml_models)
 _regime_detector: RegimeDetector | None = None
+
+
+async def _bounded_price_history(fetcher: DataFetcher, ticker: str, source: str, days: int) -> pd.DataFrame:
+    try:
+        return await asyncio.wait_for(
+            fetcher.get_price_history(ticker, source, days=days),
+            timeout=_MARKET_DATA_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        return pd.DataFrame()
 
 
 def set_regime_detector(detector: RegimeDetector) -> None:
@@ -70,30 +81,33 @@ async def compute_risk_metrics(
     asset_currencies = {ticker: asset_map[ticker]["currency"] for ticker in tickers}
 
     price_results = await asyncio.gather(
-        *[fetcher.get_price_history(ticker, asset_map[ticker]["data_source"], days=365) for ticker in tickers],
-        return_exceptions=True,
+        *[_bounded_price_history(fetcher, ticker, asset_map[ticker]["data_source"], 365) for ticker in tickers],
     )
     price_data = {
         ticker: frame
         for ticker, frame in zip(tickers, price_results)
-        if not isinstance(frame, Exception) and not frame.empty
+        if not frame.empty
     }
     usd_inr = await fetcher.get_usd_inr_rate()
-    live_prices_inr = (
-        await fetcher.get_latest_prices_in_inr(
-            [
-                {
-                    "ticker": ticker,
-                    "source": asset_map[ticker]["data_source"],
-                    "exchange": asset_map[ticker].get("exchange"),
-                    "currency": asset_currencies[ticker],
-                }
-                for ticker in tickers
-            ]
-        )
-        if hasattr(fetcher, "get_latest_prices_in_inr")
-        else {}
-    )
+    live_prices_inr = {}
+    if hasattr(fetcher, "get_latest_prices_in_inr"):
+        try:
+            live_prices_inr = await asyncio.wait_for(
+                fetcher.get_latest_prices_in_inr(
+                    [
+                        {
+                            "ticker": ticker,
+                            "source": asset_map[ticker]["data_source"],
+                            "exchange": asset_map[ticker].get("exchange"),
+                            "currency": asset_currencies[ticker],
+                        }
+                        for ticker in tickers
+                    ]
+                ),
+                timeout=_MARKET_DATA_TIMEOUT_SECONDS,
+            )
+        except Exception:
+            live_prices_inr = {}
 
     returns_df = await loop.run_in_executor(None, align_returns, price_data, asset_currencies, "USD", usd_inr)
     current_values: dict[str, float] = {}
@@ -123,7 +137,9 @@ async def compute_risk_metrics(
     portfolio_returns = returns_df[common_tickers] @ weights
 
     try:
-        benchmark_frame = await fetcher.get_price_history("SPY", "yahoo", days=365)
+        benchmark_frame = await _bounded_price_history(fetcher, "SPY", "yahoo", 365)
+        if benchmark_frame.empty:
+            raise ValueError("benchmark history unavailable")
         benchmark_returns = log_returns(benchmark_frame["close"])
         aligned = pd.concat([portfolio_returns.rename("portfolio"), benchmark_returns.rename("benchmark")], axis=1).dropna()
     except Exception:

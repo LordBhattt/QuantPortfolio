@@ -49,3 +49,18 @@ Volatility model MAE was 0.1052 versus 0.0502 for trailing volatility, so it rem
 Block-bootstrap annualized return-difference CI versus equal weight: [-0.0027, 0.0009], significant=False.
 QP Smart is promoted only from train-window evidence. No held-out result is used to change settings.
 No bootstrap Sharpe difference is claimed until the comparison is implemented over the same daily curves.
+
+## Final live demo check
+
+The three-year demo run used monthly rebalancing, 10 bps costs, and ML disabled.
+The train-only selector chose Hierarchical Risk Parity through 2025-09-12.
+
+| Strategy | Profit (INR) | Sharpe | Max drawdown |
+|---|---:|---:|---:|
+| QP Smart / Hierarchical Risk Parity | 26,148.00 | 0.23 | -12.09% |
+| Equal Weight | 26,864.30 | 0.18 | -17.23% |
+| Optimized | 20,313.40 | -0.02 | -15.04% |
+| Buy and Hold | 12,907.20 | -0.25 | -15.84% |
+| SPY reference | 66,598.48 | 0.78 | -18.76% |
+
+Backtest results are historical and are not a guarantee of future returns.
